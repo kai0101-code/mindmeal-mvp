@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Screen = "welcome" | "onboarding" | "home" | "scan" | "food-search" | "manual-entry" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
+type Screen = "welcome" | "onboarding" | "home" | "scan" | "album" | "food-search" | "manual-entry" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
+type AlbumPermission = "unknown" | "allowed";
 type LocationPermission = "unknown" | "allowed" | "denied";
 type Profile = {
   age: string;
@@ -97,7 +98,7 @@ function AppHeader({ label }: { label?: string }) {
 }
 
 function BottomNav({ screen, go }: { screen: Screen; go: (screen: Screen) => void }) {
-  const active = screen === "nearby" || screen === "store" ? "nearby" : screen === "profile" || screen === "settings" ? "profile" : screen === "scan" || screen === "food-search" || screen === "manual-entry" || screen === "analysis" ? "scan" : "home";
+  const active = screen === "nearby" || screen === "store" ? "nearby" : screen === "profile" || screen === "settings" ? "profile" : screen === "scan" || screen === "album" || screen === "food-search" || screen === "manual-entry" || screen === "analysis" ? "scan" : "home";
   const items: { key: "home" | "scan" | "nearby" | "profile"; icon: string; label: string }[] = [
     { key: "home", icon: "⌂", label: "首頁" },
     { key: "scan", icon: "+", label: "紀錄飲食" },
@@ -191,14 +192,22 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
   </main>;
 }
 
-function Scan({ go, chooseMeal }: { go: (screen: Screen) => void; chooseMeal: (meal: Meal) => void }) {
+function Scan({ go, chooseMeal, albumPermission, allowAlbum }: { go: (screen: Screen) => void; chooseMeal: (meal: Meal) => void; albumPermission: AlbumPermission; allowAlbum: () => void }) {
   const [scanning, setScanning] = useState(false);
+  const [showAlbumPermission, setShowAlbumPermission] = useState(false);
   const begin = () => {
     chooseMeal(demoMeal);
     setScanning(true);
     window.setTimeout(() => go("analysis"), 1200);
   };
-  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>DEMO</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在整理這一餐" : "讓食物進入框內"}</h1><p>{scanning ? "辨識主要食材與份量，請稍候。" : "原型會使用示範餐點，不會上傳照片。"}</p></section><button className={`camera-frame ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="拍照並分析餐點"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "+"}</b></button><div className="capture-options"><button onClick={begin}>相簿</button><button onClick={() => go("food-search")}>搜尋食物</button><button onClick={() => go("manual-entry")}>手動輸入</button></div><BottomNav screen="scan" go={go} /></main>;
+  const openAlbum = () => albumPermission === "allowed" ? go("album") : setShowAlbumPermission(true);
+  const approveAlbum = () => { allowAlbum(); setShowAlbumPermission(false); go("album"); };
+  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>DEMO</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在整理這一餐" : "讓食物進入框內"}</h1><p>{scanning ? "辨識主要食材與份量，請稍候。" : "原型會使用示範餐點，不會上傳照片。"}</p></section><div className={`camera-frame ${scanning ? "scanning" : ""}`} aria-label="餐點拍攝取景框"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "+"}</b></div><button className={`shutter-btn ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="拍照並分析餐點"><span /></button><div className="capture-options"><button onClick={openAlbum}>相簿</button><button onClick={() => go("food-search")}>搜尋食物</button><button onClick={() => go("manual-entry")}>手動輸入</button></div>{showAlbumPermission && <div className="modal-backdrop album-permission-backdrop"><section className="permission-modal album-permission-modal" role="dialog" aria-modal="true" aria-labelledby="album-permission-title"><span className="permission-icon">▦</span><span className="eyebrow">PHOTO ACCESS</span><h2 id="album-permission-title">允許存取相簿？</h2><p>MindMeal 只會讀取你選擇的餐點照片，用於這次的營養分析示範。</p><button className="primary-btn" onClick={approveAlbum}>允許並開啟相簿 <span>→</span></button><button className="secondary-btn" onClick={() => setShowAlbumPermission(false)}>暫不允許</button></section></div>}<BottomNav screen="scan" go={go} /></main>;
+}
+
+function AlbumGallery({ choose, go }: { choose: (meal: Meal) => void; go: (screen: Screen) => void }) {
+  const symbols = ["🍔", "🍜", "🍱", "🥗", "🥚", "🥛"];
+  return <main className="app-screen album-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回相機">←</button><span>相簿</span><i>最近項目</i></header><section className="album-intro"><span className="eyebrow">PHOTO LIBRARY</span><h1>選擇餐點照片</h1><p>選一張照片後，會帶入對應的示範餐點進行營養分析。</p></section><section className="album-grid" aria-label="相簿預覽">{foodLibrary.map((food, index) => <button key={food.id} onClick={() => choose(food)} aria-label={`選擇 ${food.name}`}><span className={`album-thumb album-thumb-${index + 1}`}><b aria-hidden="true">{symbols[index]}</b></span><strong>{food.name}</strong><small>{food.calories} kcal</small></button>)}</section><BottomNav screen="album" go={go} /></main>;
 }
 
 function FoodSearch({ choose, go }: { choose: (meal: Meal) => void; go: (screen: Screen) => void }) {
@@ -315,6 +324,7 @@ export default function HomePage() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [selectedMeal, setSelectedMeal] = useState<Meal>(demoMeal);
+  const [albumPermission, setAlbumPermission] = useState<AlbumPermission>("unknown");
   const [meal, setMeal] = useState<Meal | null>(null);
   const [recordDays, setRecordDays] = useState(1);
   const [ready, setReady] = useState(false);
@@ -323,6 +333,7 @@ export default function HomePage() {
     const restore = window.setTimeout(() => {
       try {
         const raw = window.localStorage.getItem("mindmeal-demo");
+        if (window.localStorage.getItem("mindmeal-album-permission") === "allowed") setAlbumPermission("allowed");
         if (raw) {
           const data = JSON.parse(raw);
           setProfile(normalizeProfile(data.profile));
@@ -338,6 +349,9 @@ export default function HomePage() {
   useEffect(() => {
     if (ready) window.localStorage.setItem("mindmeal-demo", JSON.stringify({ profile, meal, recordDays, onboarded: screen !== "welcome" && screen !== "onboarding" }));
   }, [profile, meal, recordDays, screen, ready]);
+  useEffect(() => {
+    if (ready && albumPermission === "allowed") window.localStorage.setItem("mindmeal-album-permission", "allowed");
+  }, [albumPermission, ready]);
   const go = (next: Screen) => {
     setScreen(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -362,16 +376,19 @@ export default function HomePage() {
   };
   const reset = () => {
     window.localStorage.removeItem("mindmeal-demo");
+    window.localStorage.removeItem("mindmeal-album-permission");
     setProfile(emptyProfile);
     setMeal(null);
     setRecordDays(1);
+    setAlbumPermission("unknown");
     setScreen("welcome");
   };
   if (!ready) return <main className="loading-screen"><Brand /><span>LOADING DIRECTION</span></main>;
   let content;
   if (screen === "welcome") content = <Welcome start={() => go("onboarding")} demo={() => { setMeal(demoMeal); setRecordDays(7); go("home"); }} />;
   else if (screen === "onboarding") content = <Onboarding profile={profile} setProfile={setProfile} finish={() => go("home")} back={() => go("welcome")} />;
-  else if (screen === "scan") content = <Scan go={go} chooseMeal={setSelectedMeal} />;
+  else if (screen === "scan") content = <Scan go={go} chooseMeal={setSelectedMeal} albumPermission={albumPermission} allowAlbum={() => setAlbumPermission("allowed")} />;
+  else if (screen === "album") content = <AlbumGallery choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
   else if (screen === "food-search") content = <FoodSearch choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
   else if (screen === "manual-entry") content = <ManualEntry choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
   else if (screen === "analysis") content = <Analysis initialMeal={selectedMeal} go={go} save={saveMeal} />;
