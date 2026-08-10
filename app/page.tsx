@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Screen = "welcome" | "onboarding" | "home" | "scan" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
+type Screen = "welcome" | "onboarding" | "home" | "scan" | "food-search" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
 type LocationPermission = "unknown" | "allowed" | "denied";
 type Profile = {
   age: string;
@@ -61,6 +61,14 @@ const demoMeal: Meal = {
   completion: "吃完",
   ingredients: ["雞胸肉", "白飯", "花椰菜", "玉米筍"],
 };
+const foodLibrary: Meal[] = [
+  { id: 11, name: "麥當勞漢堡", calories: 263, protein: 13, carbs: 31, fat: 10, rice: "一碗", sauce: "正常", completion: "吃完", ingredients: ["牛肉", "漢堡麵包", "酸黃瓜", "洋蔥"] },
+  { id: 12, name: "紅燒牛肉麵", calories: 650, protein: 32, carbs: 78, fat: 22, rice: "一碗", sauce: "正常", completion: "吃完", ingredients: ["牛肉", "麵條", "青菜", "紅燒湯頭"] },
+  { id: 13, name: "烤雞腿便當", calories: 720, protein: 38, carbs: 92, fat: 20, rice: "一碗", sauce: "正常", completion: "吃完", ingredients: ["雞腿", "白飯", "高麗菜", "滷蛋"] },
+  { id: 14, name: "鮭魚生菜飯碗", calories: 560, protein: 34, carbs: 64, fat: 18, rice: "一碗", sauce: "少", completion: "吃完", ingredients: ["鮭魚", "糙米", "生菜", "玉米"] },
+  { id: 15, name: "茶葉蛋", calories: 73, protein: 7, carbs: 1, fat: 5, rice: "一碗", sauce: "少", completion: "吃完", ingredients: ["雞蛋"] },
+  { id: 16, name: "無糖豆漿", calories: 180, protein: 12, carbs: 20, fat: 6, rice: "一碗", sauce: "少", completion: "吃完", ingredients: ["黃豆", "水"] },
+];
 
 function normalizeProfile(value?: Partial<Profile> & { location?: LocationPermission | boolean }): Profile {
   const location = value?.location === true ? "allowed" : value?.location === false ? "unknown" : value?.location || "unknown";
@@ -89,7 +97,7 @@ function AppHeader({ label }: { label?: string }) {
 }
 
 function BottomNav({ screen, go }: { screen: Screen; go: (screen: Screen) => void }) {
-  const active = screen === "nearby" || screen === "store" ? "nearby" : screen === "profile" || screen === "settings" ? "profile" : screen === "scan" || screen === "analysis" ? "scan" : "home";
+  const active = screen === "nearby" || screen === "store" ? "nearby" : screen === "profile" || screen === "settings" ? "profile" : screen === "scan" || screen === "food-search" || screen === "analysis" ? "scan" : "home";
   const items: { key: "home" | "scan" | "nearby" | "profile"; icon: string; label: string }[] = [
     { key: "home", icon: "⌂", label: "首頁" },
     { key: "scan", icon: "+", label: "紀錄飲食" },
@@ -183,43 +191,51 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
   </main>;
 }
 
-function Scan({ go }: { go: (screen: Screen) => void }) {
+function Scan({ go, chooseMeal }: { go: (screen: Screen) => void; chooseMeal: (meal: Meal) => void }) {
   const [scanning, setScanning] = useState(false);
   const begin = () => {
+    chooseMeal(demoMeal);
     setScanning(true);
     window.setTimeout(() => go("analysis"), 1200);
   };
-  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>DEMO</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在整理這一餐" : "讓食物進入框內"}</h1><p>{scanning ? "辨識主要食材與份量，請稍候。" : "原型會使用示範餐點，不會上傳照片。"}</p></section><button className={`camera-frame ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="拍照並分析餐點"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "+"}</b></button><div className="capture-options"><button onClick={begin}>相簿</button><button onClick={begin}>搜尋食物</button><button onClick={begin}>手動輸入</button></div><BottomNav screen="scan" go={go} /></main>;
+  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>DEMO</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在整理這一餐" : "讓食物進入框內"}</h1><p>{scanning ? "辨識主要食材與份量，請稍候。" : "原型會使用示範餐點，不會上傳照片。"}</p></section><button className={`camera-frame ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="拍照並分析餐點"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "+"}</b></button><div className="capture-options"><button onClick={begin}>相簿</button><button onClick={() => go("food-search")}>搜尋食物</button><button onClick={begin}>手動輸入</button></div><BottomNav screen="scan" go={go} /></main>;
+}
+
+function FoodSearch({ choose, go }: { choose: (meal: Meal) => void; go: (screen: Screen) => void }) {
+  const [query, setQuery] = useState("");
+  const normalized = query.trim().toLowerCase();
+  const results = foodLibrary.filter(food => !normalized || food.name.toLowerCase().includes(normalized) || food.ingredients.some(item => item.toLowerCase().includes(normalized)));
+  return <main className="app-screen food-search-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回紀錄飲食">←</button><span>搜尋食物</span><i /></header><section className="food-search-intro"><span className="eyebrow">FOOD DATABASE</span><h1>今天吃了什麼？</h1><p>搜尋餐點名稱或食材，營養數值皆為單份示範估算。</p></section><label className="food-search-field"><span aria-hidden="true">⌕</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜尋：牛肉麵、漢堡、雞蛋…" aria-label="搜尋食物" />{query && <button onClick={() => setQuery("")} aria-label="清除搜尋">×</button>}</label><div className="food-results-heading"><span>{normalized ? "搜尋結果" : "常見食物"}</span><small>{results.length} 項</small></div><section className="food-result-list">{results.map(food => <button key={food.id} onClick={() => choose(food)}><span className="food-result-icon">{food.name.slice(0, 1)}</span><span className="food-result-copy"><strong>{food.name}</strong><small>{food.calories} kcal · 蛋白質 {food.protein}g · 碳水 {food.carbs}g · 脂肪 {food.fat}g</small></span><i>→</i></button>)}{results.length === 0 && <div className="food-empty"><strong>找不到「{query}」</strong><p>可以換個名稱或改用主要食材搜尋。</p><button onClick={() => setQuery("")}>查看全部食物</button></div>}</section><BottomNav screen="food-search" go={go} /></main>;
 }
 
 function Option({ title, values, value, setValue }: { title: string; values: string[]; value: string; setValue: (value: string) => void }) {
   return <div className="option-block"><span>{title}</span><div>{values.map(item => <button key={item} className={value === item ? "selected" : ""} onClick={() => setValue(item)}>{item}</button>)}</div></div>;
 }
 
-function Analysis({ save, go }: { save: (meal: Meal) => void; go: (screen: Screen) => void }) {
+function Analysis({ initialMeal, save, go }: { initialMeal: Meal; save: (meal: Meal) => void; go: (screen: Screen) => void }) {
   const [advanced, setAdvanced] = useState(false);
   const [rice, setRice] = useState("一碗");
   const [sauce, setSauce] = useState("正常");
   const [completion, setCompletion] = useState("吃完");
-  const [ingredients, setIngredients] = useState(demoMeal.ingredients.join("、"));
+  const [ingredients, setIngredients] = useState(initialMeal.ingredients.join("、"));
   const [customCalories, setCustomCalories] = useState("");
   const meal = useMemo(() => {
     const riceRatio = rice === "半碗" ? .78 : rice === "加飯" ? 1.18 : 1;
     const sauceDelta = sauce === "多" ? 55 : sauce === "少" ? -25 : 0;
     const completionRatio = completion === "剩一些" ? .8 : 1;
     return {
-      ...demoMeal,
+      ...initialMeal,
       id: 0,
-      calories: customCalories ? Math.max(0, Number(customCalories) || 0) : Math.round((620 * riceRatio + sauceDelta) * completionRatio),
-      protein: Math.round(42 * completionRatio),
-      carbs: Math.round(72 * riceRatio * completionRatio),
-      fat: Math.round((18 + sauceDelta * .08) * completionRatio),
+      calories: customCalories ? Math.max(0, Number(customCalories) || 0) : Math.round((initialMeal.calories * riceRatio + sauceDelta) * completionRatio),
+      protein: Math.round(initialMeal.protein * completionRatio),
+      carbs: Math.round(initialMeal.carbs * riceRatio * completionRatio),
+      fat: Math.round((initialMeal.fat + sauceDelta * .08) * completionRatio),
       rice,
       sauce,
       completion,
       ingredients: ingredients.split("、").map(item => item.trim()).filter(Boolean),
     };
-  }, [rice, sauce, completion, ingredients, customCalories]);
+  }, [initialMeal, rice, sauce, completion, ingredients, customCalories]);
   return <main className="app-screen analysis-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回掃描">←</button><span>AI 分析結果</span><i>估算</i></header><section className="food-visual"><div className="plate"><span className="food rice" /><span className="food chicken" /><span className="food greens g1" /><span className="food greens g2" /></div><span className="detected">辨識信心高 · 可直接儲存</span></section><section className="analysis-content"><span className="eyebrow">CHICKEN RICE BOWL</span><h1>{meal.name}</h1><p className="estimate-note">以下為 AI 估算值，會因食材與烹調方式不同；信心低時才會請你確認。</p><div className="macro-summary"><span><b>{meal.calories}</b> kcal</span><span><b>{meal.protein}g</b> 蛋白質</span><span><b>{meal.carbs}g</b> 碳水</span><span><b>{meal.fat}g</b> 脂肪</span></div><div className="detected-foods">{meal.ingredients.map(item => <span key={item}>{item}</span>)}</div><button className="primary-btn" onClick={() => save(meal)}>一鍵儲存這餐 <span>→</span></button><button className="advanced-toggle" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{advanced ? "收起進階調整" : "進階調整食材與數值"}<span>{advanced ? "−" : "＋"}</span></button>{advanced && <div className="advanced-panel"><Option title="飯量" values={["半碗", "一碗", "加飯"]} value={rice} setValue={setRice} /><Option title="醬料" values={["少", "正常", "多"]} value={sauce} setValue={setSauce} /><Option title="實際吃完" values={["吃完", "剩一些"]} value={completion} setValue={setCompletion} /><label>食材（以頓號分隔）<input value={ingredients} onChange={event => setIngredients(event.target.value)} /></label><label>自行輸入熱量<input inputMode="numeric" placeholder={String(meal.calories)} value={customCalories} onChange={event => setCustomCalories(event.target.value)} /></label></div>}</section></main>;
 }
 
@@ -289,6 +305,7 @@ function ProfileScreen({ profile, setProfile, editSetup, reset, go }: { profile:
 export default function HomePage() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const [profile, setProfile] = useState<Profile>(emptyProfile);
+  const [selectedMeal, setSelectedMeal] = useState<Meal>(demoMeal);
   const [meal, setMeal] = useState<Meal | null>(null);
   const [recordDays, setRecordDays] = useState(1);
   const [ready, setReady] = useState(false);
@@ -345,8 +362,9 @@ export default function HomePage() {
   let content;
   if (screen === "welcome") content = <Welcome start={() => go("onboarding")} demo={() => { setMeal(demoMeal); setRecordDays(7); go("home"); }} />;
   else if (screen === "onboarding") content = <Onboarding profile={profile} setProfile={setProfile} finish={() => go("home")} back={() => go("welcome")} />;
-  else if (screen === "scan") content = <Scan go={go} />;
-  else if (screen === "analysis") content = <Analysis go={go} save={saveMeal} />;
+  else if (screen === "scan") content = <Scan go={go} chooseMeal={setSelectedMeal} />;
+  else if (screen === "food-search") content = <FoodSearch choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
+  else if (screen === "analysis") content = <Analysis initialMeal={selectedMeal} go={go} save={saveMeal} />;
   else if (screen === "result" && meal) content = <Result meal={meal} go={go} />;
   else if (screen === "nearby") content = <Nearby profile={profile} setProfile={setProfile} go={go} />;
   else if (screen === "store") content = <StoreDetail go={go} />;
