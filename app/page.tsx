@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Screen = "welcome" | "onboarding" | "home" | "scan" | "food-search" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
+type Screen = "welcome" | "onboarding" | "home" | "scan" | "food-search" | "manual-entry" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
 type LocationPermission = "unknown" | "allowed" | "denied";
 type Profile = {
   age: string;
@@ -97,7 +97,7 @@ function AppHeader({ label }: { label?: string }) {
 }
 
 function BottomNav({ screen, go }: { screen: Screen; go: (screen: Screen) => void }) {
-  const active = screen === "nearby" || screen === "store" ? "nearby" : screen === "profile" || screen === "settings" ? "profile" : screen === "scan" || screen === "food-search" || screen === "analysis" ? "scan" : "home";
+  const active = screen === "nearby" || screen === "store" ? "nearby" : screen === "profile" || screen === "settings" ? "profile" : screen === "scan" || screen === "food-search" || screen === "manual-entry" || screen === "analysis" ? "scan" : "home";
   const items: { key: "home" | "scan" | "nearby" | "profile"; icon: string; label: string }[] = [
     { key: "home", icon: "⌂", label: "首頁" },
     { key: "scan", icon: "+", label: "紀錄飲食" },
@@ -198,7 +198,7 @@ function Scan({ go, chooseMeal }: { go: (screen: Screen) => void; chooseMeal: (m
     setScanning(true);
     window.setTimeout(() => go("analysis"), 1200);
   };
-  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>DEMO</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在整理這一餐" : "讓食物進入框內"}</h1><p>{scanning ? "辨識主要食材與份量，請稍候。" : "原型會使用示範餐點，不會上傳照片。"}</p></section><button className={`camera-frame ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="拍照並分析餐點"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "+"}</b></button><div className="capture-options"><button onClick={begin}>相簿</button><button onClick={() => go("food-search")}>搜尋食物</button><button onClick={begin}>手動輸入</button></div><BottomNav screen="scan" go={go} /></main>;
+  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>DEMO</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在整理這一餐" : "讓食物進入框內"}</h1><p>{scanning ? "辨識主要食材與份量，請稍候。" : "原型會使用示範餐點，不會上傳照片。"}</p></section><button className={`camera-frame ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="拍照並分析餐點"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "+"}</b></button><div className="capture-options"><button onClick={begin}>相簿</button><button onClick={() => go("food-search")}>搜尋食物</button><button onClick={() => go("manual-entry")}>手動輸入</button></div><BottomNav screen="scan" go={go} /></main>;
 }
 
 function FoodSearch({ choose, go }: { choose: (meal: Meal) => void; go: (screen: Screen) => void }) {
@@ -206,6 +206,15 @@ function FoodSearch({ choose, go }: { choose: (meal: Meal) => void; go: (screen:
   const normalized = query.trim().toLowerCase();
   const results = foodLibrary.filter(food => !normalized || food.name.toLowerCase().includes(normalized) || food.ingredients.some(item => item.toLowerCase().includes(normalized)));
   return <main className="app-screen food-search-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回紀錄飲食">←</button><span>搜尋食物</span><i /></header><section className="food-search-intro"><span className="eyebrow">FOOD DATABASE</span><h1>今天吃了什麼？</h1><p>搜尋餐點名稱或食材，營養數值皆為單份示範估算。</p></section><label className="food-search-field"><span aria-hidden="true">⌕</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜尋：牛肉麵、漢堡、雞蛋…" aria-label="搜尋食物" />{query && <button onClick={() => setQuery("")} aria-label="清除搜尋">×</button>}</label><div className="food-results-heading"><span>{normalized ? "搜尋結果" : "常見食物"}</span><small>{results.length} 項</small></div><section className="food-result-list">{results.map(food => <button key={food.id} onClick={() => choose(food)}><span className="food-result-icon">{food.name.slice(0, 1)}</span><span className="food-result-copy"><strong>{food.name}</strong><small>{food.calories} kcal · 蛋白質 {food.protein}g · 碳水 {food.carbs}g · 脂肪 {food.fat}g</small></span><i>→</i></button>)}{results.length === 0 && <div className="food-empty"><strong>找不到「{query}」</strong><p>可以換個名稱或改用主要食材搜尋。</p><button onClick={() => setQuery("")}>查看全部食物</button></div>}</section><BottomNav screen="food-search" go={go} /></main>;
+}
+
+function ManualEntry({ choose, go }: { choose: (meal: Meal) => void; go: (screen: Screen) => void }) {
+  const [form, setForm] = useState({ name: "", ingredients: "", calories: "", protein: "0", carbs: "0", fat: "0" });
+  const update = (key: keyof typeof form, value: string) => setForm(current => ({ ...current, [key]: value }));
+  const nutritionKeys: ("calories" | "protein" | "carbs" | "fat")[] = ["calories", "protein", "carbs", "fat"];
+  const invalid = !form.name.trim() || !form.calories.trim() || nutritionKeys.some(key => Number(form[key]) < 0 || Number.isNaN(Number(form[key])));
+  const submit = () => choose({ id: Date.now(), name: form.name.trim(), calories: Number(form.calories), protein: Number(form.protein), carbs: Number(form.carbs), fat: Number(form.fat), rice: "一碗", sauce: "正常", completion: "吃完", ingredients: form.ingredients.split(/[、,，]/).map(item => item.trim()).filter(Boolean) });
+  return <main className="app-screen manual-entry-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回紀錄飲食">←</button><span>手動輸入</span><i /></header><section className="manual-entry-intro"><span className="eyebrow">CUSTOM MEAL</span><h1>建立自己的餐點</h1><p>輸入包裝標示或你知道的數值，之後仍可在分析頁再次調整。</p></section><section className="manual-form"><label className="manual-wide"><span>餐點名稱 <b>必填</b></span><input value={form.name} onChange={event => update("name", event.target.value)} placeholder="例如：自製雞胸沙拉" /></label><label className="manual-wide"><span>食材</span><textarea value={form.ingredients} onChange={event => update("ingredients", event.target.value)} placeholder="雞胸肉、蘿蔓、番茄、玉米" rows={3} /><small>可用頓號或逗號分隔多項食材</small></label><div className="manual-nutrition-title"><strong>營養資訊</strong><small>每份估算</small></div><div className="manual-nutrition-grid"><label><span>熱量 <b>必填</b></span><div><input inputMode="decimal" type="number" min="0" value={form.calories} onChange={event => update("calories", event.target.value)} placeholder="0" /><i>kcal</i></div></label><label><span>蛋白質</span><div><input inputMode="decimal" type="number" min="0" value={form.protein} onChange={event => update("protein", event.target.value)} /><i>g</i></div></label><label><span>碳水</span><div><input inputMode="decimal" type="number" min="0" value={form.carbs} onChange={event => update("carbs", event.target.value)} /><i>g</i></div></label><label><span>脂肪</span><div><input inputMode="decimal" type="number" min="0" value={form.fat} onChange={event => update("fat", event.target.value)} /><i>g</i></div></label></div><div className="manual-preview"><span>目前總計</span><strong>{Number(form.calories) || 0} kcal</strong><small>蛋白質 {Number(form.protein) || 0}g · 碳水 {Number(form.carbs) || 0}g · 脂肪 {Number(form.fat) || 0}g</small></div><button className="primary-btn" disabled={invalid} onClick={submit}>確認並查看分析 <span>→</span></button></section><BottomNav screen="manual-entry" go={go} /></main>;
 }
 
 function Option({ title, values, value, setValue }: { title: string; values: string[]; value: string; setValue: (value: string) => void }) {
@@ -364,6 +373,7 @@ export default function HomePage() {
   else if (screen === "onboarding") content = <Onboarding profile={profile} setProfile={setProfile} finish={() => go("home")} back={() => go("welcome")} />;
   else if (screen === "scan") content = <Scan go={go} chooseMeal={setSelectedMeal} />;
   else if (screen === "food-search") content = <FoodSearch choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
+  else if (screen === "manual-entry") content = <ManualEntry choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
   else if (screen === "analysis") content = <Analysis initialMeal={selectedMeal} go={go} save={saveMeal} />;
   else if (screen === "result" && meal) content = <Result meal={meal} go={go} />;
   else if (screen === "nearby") content = <Nearby profile={profile} setProfile={setProfile} go={go} />;
