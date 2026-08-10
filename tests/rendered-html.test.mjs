@@ -35,7 +35,7 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.doesNotMatch(page, /key: "trend"/);
   assert.doesNotMatch(page, /SCAN AREA/);
   assert.match(page, /function ProfileSettings/);
-  assert.match(page, /editSetup=\{\(\) => go\("settings"\)\}/);
+  assert.match(page, /editSetup=\{openSettings\}/);
   assert.match(page, /儲存所有設定/);
   assert.match(page, /尚未儲存變更/);
   assert.match(page, /<\/main><BottomNav screen="settings" go=\{leave\}/);
@@ -48,4 +48,6 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /className=\{`shutter-btn/);
   assert.match(page, /允許存取相簿？/);
   assert.match(page, /function AlbumGallery/);
+  assert.match(page, /scrollIntoView\(\{ behavior: "smooth"/);
+  assert.match(page, /label === "外食情境" \? "contexts"/);
 });

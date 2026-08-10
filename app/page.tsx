@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 
 type Screen = "welcome" | "onboarding" | "home" | "scan" | "album" | "food-search" | "manual-entry" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
 type AlbumPermission = "unknown" | "allowed";
+type SettingsSection = "body" | "preferences" | "contexts";
 type LocationPermission = "unknown" | "allowed" | "denied";
 type Profile = {
   age: string;
@@ -296,9 +297,14 @@ function EditMeal({ meal, update, remove, go }: { meal: Meal; update: (meal: Mea
   return <main className="app-screen screen-enter"><header className="simple-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><span>編輯餐點</span><i>估算</i></header><section className="edit-card"><span className="eyebrow">TODAY&apos;S MEAL</span><h1>{draft.name}</h1><label>份量<select value={draft.rice} onChange={event => setDraft({ ...draft, rice: event.target.value })}><option>半碗</option><option>一碗</option><option>加飯</option></select></label><label>醬料<select value={draft.sauce} onChange={event => setDraft({ ...draft, sauce: event.target.value })}><option>少</option><option>正常</option><option>多</option></select></label><label>完食度<select value={draft.completion} onChange={event => setDraft({ ...draft, completion: event.target.value })}><option>吃完</option><option>剩一些</option></select></label><label>食材<input value={draft.ingredients.join("、")} onChange={event => setDraft({ ...draft, ingredients: event.target.value.split("、").map(item => item.trim()).filter(Boolean) })} /></label><button className="primary-btn" onClick={save}>儲存修改 <span>→</span></button><button className="delete-btn" onClick={() => setConfirming(true)}>刪除這筆紀錄</button></section>{confirming && <div className="modal-backdrop"><section className="permission-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title"><h2 id="delete-title">確定刪除這餐？</h2><p>刪除後，首頁進度與下一餐建議會一起更新。</p><button className="delete-confirm" onClick={remove}>確認刪除</button><button className="secondary-btn" onClick={() => setConfirming(false)}>先保留</button></section></div>}</main>;
 }
 
-function ProfileSettings({ profile, save, go }: { profile: Profile; save: (profile: Profile) => void; go: (screen: Screen) => void }) {
+function ProfileSettings({ profile, initialSection, save, go }: { profile: Profile; initialSection: SettingsSection; save: (profile: Profile) => void; go: (screen: Screen) => void }) {
   const [draft, setDraft] = useState(profile);
   const [pendingScreen, setPendingScreen] = useState<Screen | null>(null);
+  useEffect(() => {
+    const index = { body: 0, preferences: 1, contexts: 2 }[initialSection];
+    const timer = window.setTimeout(() => document.querySelectorAll<HTMLElement>(".settings-section")[index]?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+    return () => window.clearTimeout(timer);
+  }, [initialSection]);
   const update = <K extends keyof Profile>(key: K, value: Profile[K]) => setDraft(current => ({ ...current, [key]: value }));
   const toggle = (key: "preferences" | "exclusions" | "contexts", value: string) => update(key, draft[key].includes(value) ? draft[key].filter(item => item !== value) : [...draft[key], value]);
   const invalid = !draft.age.trim() || !draft.height.trim() || !draft.weight.trim();
@@ -316,7 +322,7 @@ function ProfileSettings({ profile, save, go }: { profile: Profile; save: (profi
   </main><BottomNav screen="settings" go={leave} /></>;
 }
 
-function ProfileScreen({ profile, setProfile, editSetup, reset, go }: { profile: Profile; setProfile: (profile: Profile) => void; editSetup: () => void; reset: () => void; go: (screen: Screen) => void }) {
+function ProfileScreen({ profile, setProfile, editSetup, reset, go }: { profile: Profile; setProfile: (profile: Profile) => void; editSetup: (event: MouseEvent<HTMLButtonElement>) => void; reset: () => void; go: (screen: Screen) => void }) {
   return <main className="app-screen profile-screen screen-enter"><AppHeader label="ME / 02" /><section className="profile-hero"><span className="avatar">意</span><div><span className="eyebrow">目前目標</span><h1>{profile.goal}</h1><p>{profile.activity}</p></div></section><section className="daily-advice"><span>每日建議</span><strong>1,900 kcal · 蛋白質 120g</strong><small>依目前資料估算，並非醫療處方。</small></section><section className="profile-list"><button onClick={editSetup}><span>身體與目標</span><b>{profile.height}cm · {profile.weight}kg →</b></button><button onClick={editSetup}><span>飲食偏好</span><b>{[...profile.preferences, ...profile.exclusions].join("、") || "無"} →</b></button><button onClick={editSetup}><span>外食情境</span><b>{profile.contexts.join("、") || "未設定"} →</b></button><button onClick={() => setProfile({ ...profile, reminder: profile.reminder === "不要提醒" ? "用餐前 20 分鐘" : "不要提醒" })}><span>提醒設定</span><b>{profile.reminder}</b></button><button onClick={() => setProfile({ ...profile, location: profile.location === "allowed" ? "denied" : "allowed" })}><span>定位與隱私權</span><b>{profile.location === "allowed" ? "已允許" : "手動地點"}</b></button></section><button className="reset-btn" onClick={reset}>重設示範資料</button><p className="prototype-note">MindMeal MVP · 所有健康數值皆為互動示範</p><BottomNav screen="profile" go={go} /></main>;
 }
 
@@ -325,6 +331,7 @@ export default function HomePage() {
   const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [selectedMeal, setSelectedMeal] = useState<Meal>(demoMeal);
   const [albumPermission, setAlbumPermission] = useState<AlbumPermission>("unknown");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("body");
   const [meal, setMeal] = useState<Meal | null>(null);
   const [recordDays, setRecordDays] = useState(1);
   const [ready, setReady] = useState(false);
@@ -355,6 +362,11 @@ export default function HomePage() {
   const go = (next: Screen) => {
     setScreen(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const openSettings = (event: MouseEvent<HTMLButtonElement>) => {
+    const label = event.currentTarget.querySelector("span")?.textContent;
+    setSettingsSection(label === "飲食偏好" ? "preferences" : label === "外食情境" ? "contexts" : "body");
+    setScreen("settings");
   };
   const saveMeal = (next: Meal) => {
     setMeal({ ...next, id: Date.now() });
@@ -395,8 +407,8 @@ export default function HomePage() {
   else if (screen === "result" && meal) content = <Result meal={meal} go={go} />;
   else if (screen === "nearby") content = <Nearby profile={profile} setProfile={setProfile} go={go} />;
   else if (screen === "store") content = <StoreDetail go={go} />;
-  else if (screen === "profile") content = <ProfileScreen profile={profile} setProfile={setProfile} editSetup={() => go("settings")} reset={reset} go={go} />;
-  else if (screen === "settings") content = <ProfileSettings profile={profile} save={setProfile} go={go} />;
+  else if (screen === "profile") content = <ProfileScreen profile={profile} setProfile={setProfile} editSetup={openSettings} reset={reset} go={go} />;
+  else if (screen === "settings") content = <ProfileSettings profile={profile} initialSection={settingsSection} save={setProfile} go={go} />;
   else if (screen === "edit-meal" && meal) content = <EditMeal meal={meal} update={updateMeal} remove={removeMeal} go={go} />;
   else content = <Dashboard meal={meal} recordDays={recordDays} go={go} />;
   return <>{content}{undo && <div className="undo-toast" role="status"><span>{undo.message}</span><button onClick={() => { setMeal(undo.meal); setUndo(null); }}>復原</button></div>}</>;
