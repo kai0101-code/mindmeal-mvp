@@ -58,4 +58,5 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /scrollIntoView\(\{ behavior: "smooth"/);
   assert.match(page, /editSetup\("contexts"\)/);
   assert.match(page, /id="settings-contexts"/);
+  assert.doesNotMatch(page, /<option>其他<\/option>/);
 });
