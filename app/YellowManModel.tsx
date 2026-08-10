@@ -45,7 +45,7 @@ export default function YellowManModel() {
     observer.observe(container);
     resize();
 
-    new GLTFLoader().load("/models/YELLOW_MAN.glb", gltf => {
+    new GLTFLoader().load(`${import.meta.env.BASE_URL}models/YELLOW_MAN.glb`, gltf => {
       model = gltf.scene;
       const bounds = new THREE.Box3().setFromObject(model);
       const size = bounds.getSize(new THREE.Vector3());

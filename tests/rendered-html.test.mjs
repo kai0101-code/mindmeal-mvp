@@ -27,7 +27,7 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /YellowManModel/);
-  assert.match(yellowMan, /\/models\/YELLOW_MAN\.glb/);
+  assert.match(yellowMan, /BASE_URL.*models\/YELLOW_MAN\.glb/);
   assert.match(page, /function RingMetric/);
   assert.match(page, /熱 量 尚 缺/);
   assert.doesNotMatch(page, /className="gap-tabs"/);

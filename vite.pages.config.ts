@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  base: "/mindmeal-mvp/",
+  base: "/mindmeal_v2_backup/",
   build: {
     outDir: "dist-pages",
     emptyOutDir: true,
