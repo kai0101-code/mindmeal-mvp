@@ -152,11 +152,6 @@ function Onboarding({ profile, setProfile, finish, back }: { profile: Profile; s
   return <main className="onboarding-screen screen-enter"><header className="onboarding-header"><button onClick={step === 0 ? back : () => setStep(step - 1)} aria-label="上一步">←</button><span>步驟 {step + 1} / 3</span><Brand /></header><div className="step-track"><i style={{ width: `${((step + 1) / 3) * 100}%` }} /></div><section className="onboarding-content"><span className="eyebrow">SETUP / 0{step + 1}</span><h1>{titles[step]}</h1>{steps[step]}</section><div className="sticky-action"><button disabled={invalid} className="primary-btn" onClick={step === 2 ? finish : () => setStep(step + 1)}>{step === 2 ? "完成，看看今天" : "下一步"}<span>→</span></button></div></main>;
 }
 
-function Progress({ label, current, target, unit, accent = false }: { label: string; current: number; target: number; unit: string; accent?: boolean }) {
-  const pct = Math.min(100, Math.round(current / target * 100));
-  return <div className="progress-row"><div className="progress-head"><span>{label}</span><span><b>{current}</b> / {target}{unit}</span></div><div className="progress-track"><i className={accent ? "accent" : ""} style={{ width: `${pct}%` }} /></div></div>;
-}
-
 function RingMetric({ label, current, target, unit }: { label: string; current: number; target: number; unit: string }) {
   const remaining = Math.max(0, target - current);
   const degrees = Math.min(360, Math.round(current / target * 360));
@@ -181,14 +176,12 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
   return <main className="app-screen home-screen screen-enter">
     <AppHeader />
     <section className="priority-overview">
-      <div className="priority-heading"><span className="eyebrow">今日最優先營養缺口</span></div>
-      <div className="hero"><span className="eyebrow">熱 量 尚 缺</span><div className="calorie-number">{remaining.toLocaleString()}<small>卡</small></div><p>{meal ? "記錄完成。晚餐優先補充蛋白質與蔬菜。" : "先記錄今天第一餐，讓方向更準確。"}</p></div>
+      <div className="hero reference-hero"><span className="eyebrow">熱 量 尚 缺</span><div className="calorie-number">{remaining.toLocaleString()}<small>卡</small></div></div>
     </section>
-    <section className="dashboard-swipe-card" aria-label="每日營養與運動摘要，可左右滑動切換" tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") setDashboardPage(1); if (event.key === "ArrowLeft") setDashboardPage(0); }} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setCardTouchStart(event.clientX); }} onPointerUp={event => endCardTouch(event.clientX)} onPointerCancel={() => setCardTouchStart(null)}>
+    <div className="dashboard-swipe-card" role="slider" aria-label="每日營養與運動摘要，可左右滑動切換" aria-valuemin={0} aria-valuemax={1} aria-valuenow={dashboardPage} aria-valuetext={dashboardPage === 0 ? "營養摘要" : "活動摘要"} tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") setDashboardPage(1); if (event.key === "ArrowLeft") setDashboardPage(0); }} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setCardTouchStart(event.clientX); }} onPointerUp={event => endCardTouch(event.clientX)} onPointerCancel={() => setCardTouchStart(null)}>
       <div className="dashboard-card-track" style={{ transform: `translateX(-${dashboardPage * 100}%)` }}>
         <article className="dashboard-card-page nutrition-summary-page" aria-hidden={dashboardPage !== 0}>
-          <div className="panel-top"><span>TODAY / 01</span><span>營養缺口 · 估算</span></div>
-          <div className="dashboard-card-layout"><div className="ring-list"><RingMetric label="蛋白質" current={protein} target={targets.protein} unit="g" /><RingMetric label="碳水" current={carbs} target={targets.carbs} unit="g" /><RingMetric label="脂肪" current={fat} target={targets.fat} unit="g" /><RingMetric label="水分" current={base.water} target={targets.water} unit="ml" /></div><div className="dashboard-human"><span className="dot-field" aria-hidden="true" /><HumanFigure /></div></div>
+          <div className="dashboard-card-layout"><div className="ring-list"><RingMetric label="蛋白質" current={protein} target={targets.protein} unit="g" /><RingMetric label="碳水" current={carbs} target={targets.carbs} unit="g" /><RingMetric label="脂肪" current={fat} target={targets.fat} unit="g" /></div><div className="dashboard-human"><span className="dot-field" aria-hidden="true" /><HumanFigure /></div></div>
         </article>
         <article className="dashboard-card-page activity-summary-page" aria-hidden={dashboardPage !== 1}>
           <div className="panel-top"><span>TODAY / 02</span><span>活動紀錄</span></div>
@@ -196,8 +189,8 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
           <div className="activity-stats"><div><i style={{ background: "conic-gradient(var(--orange) 304deg, #fff 304deg)" }} /><span><small>運動量</small><strong>38<b>分鐘</b></strong><em>目標 45 分鐘</em></span></div><div><i style={{ background: "conic-gradient(var(--orange) 294deg, #fff 294deg)" }} /><span><small>消耗熱量</small><strong>286<b>kcal</b></strong><em>今日活動估算</em></span></div></div>
         </article>
       </div>
-      <div className="dashboard-card-pager"><span>{dashboardPage === 0 ? "向左滑看活動" : "向右滑看營養"}</span><div><button className={dashboardPage === 0 ? "active" : ""} onClick={() => setDashboardPage(0)} aria-label="顯示營養摘要" /><button className={dashboardPage === 1 ? "active" : ""} onClick={() => setDashboardPage(1)} aria-label="顯示活動摘要" /></div></div>
-    </section>
+      <div className="dashboard-card-pager"><span aria-hidden="true">{dashboardPage === 0 ? "←" : "→"}</span><div><button className={dashboardPage === 0 ? "active" : ""} onClick={() => setDashboardPage(0)} aria-label="顯示營養摘要" /><button className={dashboardPage === 1 ? "active" : ""} onClick={() => setDashboardPage(1)} aria-label="顯示活動摘要" /></div></div>
+    </div>
     <section className="insight-strip"><span>NEXT MEAL / AI DIRECTION</span><p>{meal ? "蛋白質仍有缺口，下一餐選雞胸、豆腐、魚或茶葉蛋，再加一份蔬菜會更平衡。" : "目前資料還很少。拍下餐點後，我們會把複雜數字整理成下一步。"}</p><button onClick={() => go(meal ? "nearby" : "scan")}>{meal ? "查看下一餐建議" : "開始記錄"} →</button></section>
     <section className="collapsible-card"><button className="card-toggle" onClick={() => setTrendOpen(!trendOpen)} aria-expanded={trendOpen}><span><small>體態趨勢／平衡分數</small><strong>{recordDays < 3 ? `${recordDays} / 3 天` : "76 分"}</strong></span><i>{trendOpen ? "−" : "＋"}</i></button>{trendOpen && <div className="card-detail">{recordDays < 3 ? <div className="unlock"><span style={{ width: `${recordDays / 3 * 100}%` }} /><p>再記錄 {3 - recordDays} 天可查看週趨勢。現在先專注把日常留下來就好。</p></div> : <><div className="mini-bars compact-bars">{[48, 62, 55, 70, 66, 82, 76].map((value, index) => <i key={index} style={{ height: `${value}%` }} />)}</div><p>本週平衡分數穩定上升，飲水與蛋白質最值得繼續留意。</p></>}</div>}</section>
     <section className="collapsible-card"><button className="card-toggle" onClick={() => setMealsOpen(!mealsOpen)} aria-expanded={mealsOpen}><span><small>今日紀錄餐點</small><strong>{meal ? "1 餐" : "還沒有紀錄"}</strong></span><i>{mealsOpen ? "−" : "＋"}</i></button>{mealsOpen && <div className="card-detail">{meal ? <button className="meal-row" onClick={() => go("edit-meal")}><span><b>{meal.name}</b><small>{meal.calories} kcal · 估算</small></span><i>編輯 →</i></button> : <button className="empty-meal" onClick={() => go("scan")}>拍下第一餐，AI 幫你開始分析 <span>＋</span></button>}</div>}</section>
