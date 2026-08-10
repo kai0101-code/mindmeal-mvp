@@ -85,7 +85,7 @@ function HumanFigure() {
 }
 
 function AppHeader({ label }: { label?: string }) {
-  return <header className="app-header"><Brand />{label && <span className="edition">{label}</span>}</header>;
+  return <header className="app-header" aria-label={label ? "MindMeal" : undefined}><Brand /></header>;
 }
 
 function BottomNav({ screen, go }: { screen: Screen; go: (screen: Screen) => void }) {
@@ -171,7 +171,7 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
   return <main className="app-screen home-screen screen-enter">
     <AppHeader />
     <section className="priority-overview" onTouchStart={event => setTouchStart(event.touches[0].clientX)} onTouchEnd={event => endTouch(event.changedTouches[0].clientX)}>
-      <div className="priority-heading"><span className="eyebrow">今日最優先營養缺口</span><span>0{gap + 1} / 0{gaps.length}</span></div>
+      <div className="priority-heading"><span className="eyebrow">今日最優先營養缺口</span></div>
       <div className="hero"><span className="eyebrow">{gaps[gap].eyebrow}</span><div className="calorie-number">{gaps[gap].value}<small>{gaps[gap].unit}</small></div><p>{gaps[gap].note}</p></div>
       <div className="gap-tabs" aria-label="切換營養缺口">{gaps.map((item, index) => <button key={item.label} className={gap === index ? "active" : ""} onClick={() => setGap(index)}>{item.label}</button>)}</div>
     </section>
