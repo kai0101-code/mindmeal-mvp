@@ -49,5 +49,6 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /允許存取相簿？/);
   assert.match(page, /function AlbumGallery/);
   assert.match(page, /scrollIntoView\(\{ behavior: "smooth"/);
-  assert.match(page, /label === "外食情境" \? "contexts"/);
+  assert.match(page, /editSetup\("contexts"\)/);
+  assert.match(page, /id="settings-contexts"/);
 });
