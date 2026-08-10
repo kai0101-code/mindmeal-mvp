@@ -30,7 +30,9 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /熱 量 尚 缺/);
   assert.doesNotMatch(page, /className="gap-tabs"/);
   assert.match(page, /dashboard-swipe-card/);
-  assert.match(page, /今天的活動量/);
+  assert.match(page, /dashboard-data-window/);
+  assert.match(page, /dashboard-fixed-figure/);
+  assert.match(page, /活動紀錄/);
   assert.match(page, /消耗熱量/);
   assert.match(page, /體態趨勢／平衡分數/);
   assert.match(page, /今日紀錄餐點/);

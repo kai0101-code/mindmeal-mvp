@@ -158,6 +158,11 @@ function RingMetric({ label, current, target, unit }: { label: string; current: 
   return <div className="ring-metric"><i aria-hidden="true" style={{ background: `conic-gradient(var(--orange) ${degrees}deg, #fff ${degrees}deg)` }} /><span><small>尚缺 {label}</small><strong>{remaining.toLocaleString()}<b>{unit}</b></strong></span></div>;
 }
 
+function ActivityMetric({ label, value, target, unit }: { label: string; value: number; target: number; unit: string }) {
+  const degrees = Math.min(360, Math.round(value / target * 360));
+  return <div className="activity-metric"><i aria-hidden="true" style={{ background: `conic-gradient(var(--orange) ${degrees}deg, #fff ${degrees}deg)` }} /><span><small>{label}</small><strong>{value}<b>{unit}</b></strong><em>{label === "運動量" ? `目標 ${target} 分鐘` : "今日活動估算"}</em></span></div>;
+}
+
 function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: number; go: (screen: Screen) => void }) {
   const [dashboardPage, setDashboardPage] = useState(0);
   const [trendOpen, setTrendOpen] = useState(false);
@@ -178,18 +183,15 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
     <section className="priority-overview">
       <div className="hero reference-hero"><span className="eyebrow">熱 量 尚 缺</span><div className="calorie-number">{remaining.toLocaleString()}<small>卡</small></div></div>
     </section>
-    <div className="dashboard-swipe-card" role="slider" aria-label="每日營養與運動摘要，可左右滑動切換" aria-valuemin={0} aria-valuemax={1} aria-valuenow={dashboardPage} aria-valuetext={dashboardPage === 0 ? "營養摘要" : "活動摘要"} tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") setDashboardPage(1); if (event.key === "ArrowLeft") setDashboardPage(0); }} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setCardTouchStart(event.clientX); }} onPointerUp={event => endCardTouch(event.clientX)} onPointerCancel={() => setCardTouchStart(null)}>
-      <div className="dashboard-card-track" style={{ transform: `translateX(-${dashboardPage * 100}%)` }}>
-        <article className="dashboard-card-page nutrition-summary-page" aria-hidden={dashboardPage !== 0}>
-          <div className="dashboard-card-layout"><div className="ring-list"><RingMetric label="蛋白質" current={protein} target={targets.protein} unit="g" /><RingMetric label="碳水" current={carbs} target={targets.carbs} unit="g" /><RingMetric label="脂肪" current={fat} target={targets.fat} unit="g" /></div><div className="dashboard-human"><span className="dot-field" aria-hidden="true" /><HumanFigure /></div></div>
-        </article>
-        <article className="dashboard-card-page activity-summary-page" aria-hidden={dashboardPage !== 1}>
-          <div className="panel-top"><span>TODAY / 02</span><span>活動紀錄</span></div>
-          <span className="activity-kicker">MOVE WITH INTENTION.</span><h2>今天的活動量</h2><p>運動與日常移動會一起計入消耗，幫助你理解今天還有多少飲食彈性。</p>
-          <div className="activity-stats"><div><i style={{ background: "conic-gradient(var(--orange) 304deg, #fff 304deg)" }} /><span><small>運動量</small><strong>38<b>分鐘</b></strong><em>目標 45 分鐘</em></span></div><div><i style={{ background: "conic-gradient(var(--orange) 294deg, #fff 294deg)" }} /><span><small>消耗熱量</small><strong>286<b>kcal</b></strong><em>今日活動估算</em></span></div></div>
-        </article>
+    <div className="dashboard-swipe-card">
+      <div className="dashboard-data-window" role="slider" aria-label="營養與運動數值，可左右滑動切換" aria-valuemin={0} aria-valuemax={1} aria-valuenow={dashboardPage} aria-valuetext={dashboardPage === 0 ? "營養摘要" : "活動摘要"} tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") setDashboardPage(1); if (event.key === "ArrowLeft") setDashboardPage(0); }} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setCardTouchStart(event.clientX); }} onPointerUp={event => endCardTouch(event.clientX)} onPointerCancel={() => setCardTouchStart(null)}>
+        <div className="dashboard-card-track" style={{ transform: `translateX(-${dashboardPage * 100}%)` }}>
+          <article className="dashboard-card-page nutrition-summary-page" aria-hidden={dashboardPage !== 0}><div className="ring-list"><RingMetric label="蛋白質" current={protein} target={targets.protein} unit="g" /><RingMetric label="碳水" current={carbs} target={targets.carbs} unit="g" /><RingMetric label="脂肪" current={fat} target={targets.fat} unit="g" /></div></article>
+          <article className="dashboard-card-page compact-activity-page" aria-hidden={dashboardPage !== 1}><span className="activity-kicker">ACTIVITY / TODAY</span><h2>活動紀錄</h2><div className="compact-activity-list"><ActivityMetric label="運動量" value={38} target={45} unit="分鐘" /><ActivityMetric label="消耗熱量" value={286} target={350} unit="kcal" /></div></article>
+        </div>
+        <div className="dashboard-card-pager"><span aria-hidden="true">{dashboardPage === 0 ? "←" : "→"}</span><div><button className={dashboardPage === 0 ? "active" : ""} onClick={() => setDashboardPage(0)} aria-label="顯示營養摘要" /><button className={dashboardPage === 1 ? "active" : ""} onClick={() => setDashboardPage(1)} aria-label="顯示活動摘要" /></div></div>
       </div>
-      <div className="dashboard-card-pager"><span aria-hidden="true">{dashboardPage === 0 ? "←" : "→"}</span><div><button className={dashboardPage === 0 ? "active" : ""} onClick={() => setDashboardPage(0)} aria-label="顯示營養摘要" /><button className={dashboardPage === 1 ? "active" : ""} onClick={() => setDashboardPage(1)} aria-label="顯示活動摘要" /></div></div>
+      <div className="dashboard-fixed-figure"><span className="dot-field" aria-hidden="true" /><HumanFigure /></div>
     </div>
     <section className="insight-strip"><span>NEXT MEAL / AI DIRECTION</span><p>{meal ? "蛋白質仍有缺口，下一餐選雞胸、豆腐、魚或茶葉蛋，再加一份蔬菜會更平衡。" : "目前資料還很少。拍下餐點後，我們會把複雜數字整理成下一步。"}</p><button onClick={() => go(meal ? "nearby" : "scan")}>{meal ? "查看下一餐建議" : "開始記錄"} →</button></section>
     <section className="collapsible-card"><button className="card-toggle" onClick={() => setTrendOpen(!trendOpen)} aria-expanded={trendOpen}><span><small>體態趨勢／平衡分數</small><strong>{recordDays < 3 ? `${recordDays} / 3 天` : "76 分"}</strong></span><i>{trendOpen ? "−" : "＋"}</i></button>{trendOpen && <div className="card-detail">{recordDays < 3 ? <div className="unlock"><span style={{ width: `${recordDays / 3 * 100}%` }} /><p>再記錄 {3 - recordDays} 天可查看週趨勢。現在先專注把日常留下來就好。</p></div> : <><div className="mini-bars compact-bars">{[48, 62, 55, 70, 66, 82, 76].map((value, index) => <i key={index} style={{ height: `${value}%` }} />)}</div><p>本週平衡分數穩定上升，飲水與蛋白質最值得繼續留意。</p></>}</div>}</section>
