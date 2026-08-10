@@ -15,7 +15,23 @@ test("MindMeal product metadata replaces starter content", async () => {
 
 test("core user flow screens are included", async () => {
   const page = await readFile(new URL("app/page.tsx", root), "utf8");
-  for (const screen of ["onboarding", "analysis", "success", "nearby", "trend", "profile"]) {
+  for (const screen of ["onboarding", "analysis", "result", "nearby", "store", "profile", "edit-meal"]) {
     assert.match(page, new RegExp(`\\b${screen}\\b`));
   }
+});
+
+test("v2 sitemap changes preserve the first-version body visual", async () => {
+  const page = await readFile(new URL("app/page.tsx", root), "utf8");
+  for (const label of ["首頁", "紀錄飲食", "下一餐地圖", "我的資料"]) {
+    assert.match(page, new RegExp(label));
+  }
+  assert.match(page, /function HumanFigure/);
+  assert.match(page, /今日最優先營養缺口/);
+  assert.match(page, /體態趨勢／平衡分數/);
+  assert.match(page, /今日紀錄餐點/);
+  assert.match(page, /一鍵儲存這餐/);
+  assert.match(page, /手動輸入/);
+  assert.match(page, /Google Maps/);
+  assert.doesNotMatch(page, /key: "trend"/);
+  assert.doesNotMatch(page, /SCAN AREA/);
 });
