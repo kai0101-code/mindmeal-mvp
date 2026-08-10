@@ -38,6 +38,6 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /editSetup=\{\(\) => go\("settings"\)\}/);
   assert.match(page, /儲存所有設定/);
   assert.match(page, /尚未儲存變更/);
-  assert.match(page, /<BottomNav screen="settings" go=\{leave\}/);
+  assert.match(page, /<\/main><BottomNav screen="settings" go=\{leave\}/);
   assert.doesNotMatch(page, /<i>一次完成<\/i>/);
 });
