@@ -22,10 +22,12 @@ test("core user flow screens are included", async () => {
 
 test("v2 sitemap changes preserve the first-version body visual", async () => {
   const page = await readFile(new URL("app/page.tsx", root), "utf8");
+  const yellowMan = await readFile(new URL("app/YellowManModel.tsx", root), "utf8");
   for (const label of ["首頁", "紀錄飲食", "下一餐地圖", "我的資料"]) {
     assert.match(page, new RegExp(label));
   }
-  assert.match(page, /function HumanFigure/);
+  assert.match(page, /YellowManModel/);
+  assert.match(yellowMan, /\/models\/YELLOW_MAN\.glb/);
   assert.match(page, /function RingMetric/);
   assert.match(page, /熱 量 尚 缺/);
   assert.doesNotMatch(page, /className="gap-tabs"/);

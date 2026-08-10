@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import YellowManModel from "./YellowManModel";
 
 type Screen = "welcome" | "onboarding" | "home" | "scan" | "album" | "food-search" | "manual-entry" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
 type AlbumPermission = "unknown" | "allowed";
@@ -88,10 +89,6 @@ function Brand() {
 
 function Wave() {
   return <div className="wave" aria-hidden="true" />;
-}
-
-function HumanFigure() {
-  return <div className="human-wrap" aria-label="AI 身體需求：目前優先補充蛋白質"><div className="human" aria-hidden="true"><span className="head" /><span className="body" /><span className="arm arm-left" /><span className="arm arm-right" /><span className="leg leg-left" /><span className="leg leg-right" /></div><span className="human-shadow" /><span className="human-label">PROTEIN</span></div>;
 }
 
 function AppHeader({ label }: { label?: string }) {
@@ -191,7 +188,7 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
         </div>
         <div className="dashboard-card-pager"><span aria-hidden="true">{dashboardPage === 0 ? "←" : "→"}</span><div><button className={dashboardPage === 0 ? "active" : ""} onClick={() => setDashboardPage(0)} aria-label="顯示營養摘要" /><button className={dashboardPage === 1 ? "active" : ""} onClick={() => setDashboardPage(1)} aria-label="顯示活動摘要" /></div></div>
       </div>
-      <div className="dashboard-fixed-figure"><span className="dot-field" aria-hidden="true" /><HumanFigure /></div>
+      <div className="dashboard-fixed-figure"><span className="dot-field" aria-hidden="true" /><YellowManModel /></div>
     </div>
     <section className="insight-strip"><span>NEXT MEAL / AI DIRECTION</span><p>{meal ? "蛋白質仍有缺口，下一餐選雞胸、豆腐、魚或茶葉蛋，再加一份蔬菜會更平衡。" : "目前資料還很少。拍下餐點後，我們會把複雜數字整理成下一步。"}</p><button onClick={() => go(meal ? "nearby" : "scan")}>{meal ? "查看下一餐建議" : "開始記錄"} →</button></section>
     <section className="collapsible-card"><button className="card-toggle" onClick={() => setTrendOpen(!trendOpen)} aria-expanded={trendOpen}><span><small>體態趨勢／平衡分數</small><strong>{recordDays < 3 ? `${recordDays} / 3 天` : "76 分"}</strong></span><i>{trendOpen ? "−" : "＋"}</i></button>{trendOpen && <div className="card-detail">{recordDays < 3 ? <div className="unlock"><span style={{ width: `${recordDays / 3 * 100}%` }} /><p>再記錄 {3 - recordDays} 天可查看週趨勢。現在先專注把日常留下來就好。</p></div> : <><div className="mini-bars compact-bars">{[48, 62, 55, 70, 66, 82, 76].map((value, index) => <i key={index} style={{ height: `${value}%` }} />)}</div><p>本週平衡分數穩定上升，飲水與蛋白質最值得繼續留意。</p></>}</div>}</section>
