@@ -31,4 +31,4 @@
 .app-screen{overflow:visible}.app-screen.screen-enter{animation:screen-fade .28s ease-out both}@keyframes screen-fade{from{opacity:0}to{opacity:1}}.bottom-nav{position:fixed!important;top:auto!important;right:auto!important;bottom:max(14px,env(safe-area-inset-bottom))!important;left:50%!important;transform:translateX(-50%)!important;z-index:1000!important;will-change:transform}html,body{overflow-x:hidden}@media(min-width:700px){.bottom-nav{bottom:max(34px,env(safe-area-inset-bottom))!important}}
 
 /* Keep scan input choices fully above the fixed navigation hit area. */
-.scan-screen{padding-bottom:130px}.scan-screen .scan-copy{margin-top:18px}.scan-screen .camera-frame{height:clamp(250px,34vh,360px);margin-top:12px}.scan-screen .capture-options{position:relative;z-index:2;margin-top:8px;margin-bottom:12px}
+.scan-screen{padding-bottom:130px}.scan-screen .dark-header{height:72px}.scan-screen .scan-copy{margin-top:10px}.scan-screen .scan-copy h1{margin:10px 0 8px}.scan-screen .scan-copy p{margin:0}.scan-screen .camera-frame{height:clamp(300px,48vh,430px);margin-top:12px}.scan-screen .capture-options{position:relative;z-index:2;margin-top:8px;margin-bottom:12px}
