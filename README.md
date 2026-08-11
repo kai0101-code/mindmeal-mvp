@@ -8,7 +8,11 @@ MindMeal 是一款以「今天還差什麼，下一餐可以怎麼吃？」為�
 - [視覺與互動規範 DESIGN](docs/DESIGN.md)
 - [開發任務與驗收 TASK](docs/TASK.md)
 - [協作方式](CONTRIBUTING.md)
-- 線上 MVP：GitHub Pages 啟用後會顯示於 repository 首頁右側
+
+## V2 預覽（僅供參考）
+
+- [開啟 MindMeal V2 預覽網站](https://miaochenyou.github.io/mindmeal_v2_backup/)
+- 此連結為獨立備份版本，不代表主專案已合併或正式發布。
 
 ## 目前可測試流程
 
