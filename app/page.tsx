@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import YellowManModel from "./YellowManModel";
+import YellowManModel, { preloadYellowManModel } from "./YellowManModel";
 
 type Screen = "welcome" | "onboarding" | "home" | "scan" | "album" | "food-search" | "manual-entry" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
 type AlbumPermission = "unknown" | "allowed";
 type SettingsSection = "body" | "preferences" | "contexts";
 type LocationPermission = "unknown" | "allowed" | "denied";
 type Profile = {
+  name: string;
+  avatar: string;
   age: string;
   height: string;
   weight: string;
@@ -34,8 +36,11 @@ type Meal = {
   completion: string;
   ingredients: string[];
 };
+type NutritionTargets = { calories: number; protein: number; carbs: number; fat: number; water: number };
 
 const emptyProfile: Profile = {
+  name: "",
+  avatar: "",
   age: "28",
   height: "168",
   weight: "62",
@@ -50,7 +55,6 @@ const emptyProfile: Profile = {
   reminder: "用餐前 20 分鐘",
   location: "unknown",
 };
-const targets = { calories: 1900, protein: 120, carbs: 220, fat: 60, water: 2000 };
 const base = { calories: 212, protein: 0, carbs: 34, fat: 7, water: 900 };
 const demoMeal: Meal = {
   id: 1,
@@ -75,7 +79,8 @@ const foodLibrary: Meal[] = [
 
 function normalizeProfile(value?: Partial<Profile> & { location?: LocationPermission | boolean }): Profile {
   const location = value?.location === true ? "allowed" : value?.location === false ? "unknown" : value?.location || "unknown";
-  return { ...emptyProfile, ...value, location };
+  const name = value?.name && value.name !== "7000" ? value.name : "";
+  return { ...emptyProfile, ...value, name, location };
 }
 
 function normalizeMeal(value?: Partial<Meal> | null): Meal | null {
@@ -83,8 +88,56 @@ function normalizeMeal(value?: Partial<Meal> | null): Meal | null {
   return { ...demoMeal, ...value, id: value.id || 1 };
 }
 
-function Brand() {
-  return <div className="brand" aria-label="有意食 MindMeal"><span className="brand-line" /><span className="brand-zh">有 意 食</span><span className="brand-en">Mind Meal<span className="brand-dot">.</span></span></div>;
+function calculateNutritionTargets(profile: Profile): NutritionTargets {
+  // Mifflin–St Jeor resting energy, adjusted by activity and goal; macros stay within adult AMDR ranges.
+  const age = Math.min(80, Math.max(18, Number(profile.age) || 28));
+  const height = Math.min(220, Math.max(130, Number(profile.height) || 168));
+  const weight = Math.min(250, Math.max(35, Number(profile.weight) || 62));
+  const restingEnergy = 10 * weight + 6.25 * height - 5 * age + (profile.gender === "男性" ? 5 : -161);
+  const activityFactor = profile.activity === "每週 4 天以上" ? 1.7 : profile.activity === "每週 2–3 天" ? 1.5 : profile.activity === "每週 1 天" ? 1.35 : 1.2;
+  const goalFactor = profile.goal === "減脂" ? .85 : profile.goal === "增肌" ? 1.1 : 1;
+  const calories = Math.round(Math.min(4500, Math.max(1200, restingEnergy * activityFactor * goalFactor)) / 10) * 10;
+  const activityProtein = profile.activity === "每週 4 天以上" ? 1.4 : profile.activity === "每週 2–3 天" ? 1.2 : profile.activity === "每週 1 天" ? 1 : .8;
+  const proteinFactor = profile.goal === "增肌" ? Math.max(1.6, activityProtein) : profile.goal === "減脂" ? Math.max(1.4, activityProtein) : activityProtein;
+  const protein = Math.round(weight * proteinFactor);
+  const fat = Math.round(calories * .3 / 9);
+  const carbs = Math.max(130, Math.round((calories - protein * 4 - fat * 9) / 4));
+  const water = Math.round(Math.max(1500, weight * 30) / 50) * 50;
+  return { calories, protein, carbs, fat, water };
+}
+
+function avatarDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const size = 256;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const context = canvas.getContext("2d");
+      if (!context) { URL.revokeObjectURL(url); reject(new Error("Canvas unavailable")); return; }
+      const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+      const sourceX = (image.naturalWidth - sourceSize) / 2;
+      const sourceY = (image.naturalHeight - sourceSize) / 2;
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, size, size);
+      context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", .84));
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Invalid image")); };
+    image.src = url;
+  });
+}
+
+function Brand({ onHome }: { onHome?: () => void }) {
+  const artwork = <><span className="brand-line" /><span className="brand-zh">有 意 食</span><span className="brand-en">Mind Meal<span className="brand-dot" aria-hidden="true" /></span></>;
+  return <button type="button" className="brand brand-home-link" onClick={onHome || (() => window.dispatchEvent(new Event("mindmeal-go-home")))} aria-label="返回首頁">{artwork}</button>;
+}
+
+function ProfileIcon() {
+  return <svg className="profile-placeholder-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4.5 21c.6-4.7 3-7 7.5-7s6.9 2.3 7.5 7" /></svg>;
 }
 
 function Wave() {
@@ -103,7 +156,17 @@ function BottomNav({ screen, go }: { screen: Screen; go: (screen: Screen) => voi
     { key: "nearby", icon: "⌖", label: "下一餐地圖" },
     { key: "profile", icon: "○", label: "我的資料" },
   ];
-  return <nav className="bottom-nav" aria-label="主要導覽">{items.map(item => <button key={item.key} className={`nav-item ${active === item.key ? "active" : ""} ${item.key === "scan" ? "scan-nav" : ""}`} onClick={() => go(item.key)} aria-label={item.label} aria-current={active === item.key ? "page" : undefined}><span className="nav-icon">{item.icon}</span><span className="nav-label">{item.label}</span></button>)}</nav>;
+  return <nav className="bottom-nav icon-only-nav" aria-label="主要導覽">{items.map(item => <button key={item.key} className={`nav-item ${active === item.key ? "active" : ""} ${item.key === "scan" ? "scan-nav" : ""}`} onClick={() => go(item.key)} aria-label={item.label} aria-current={active === item.key ? "page" : undefined}><span className="nav-icon">{item.key === "profile" ? <ProfileIcon /> : item.icon}</span></button>)}</nav>;
+}
+
+function CalorieRollingNumber({ value }: { value: number }) {
+  let digitIndex = 0;
+  return <span key={value} className="calorie-roll-value" aria-label={value.toLocaleString()}>{value.toLocaleString().split("").map((character, index) => {
+    if (!/\d/.test(character)) return <span className="calorie-roll-separator" aria-hidden="true" key={`${character}-${index}`}>{character}</span>;
+    const delay = digitIndex * 65;
+    digitIndex += 1;
+    return <span className="calorie-roll-digit" aria-hidden="true" key={`${value}-${index}`}><span className="calorie-roll-strip" style={{ "--digit-stop": Number(character) + 10, "--digit-delay": `${delay}ms` } as React.CSSProperties}>{Array.from({ length: 20 }, (_, digit) => <i key={digit}>{digit % 10}</i>)}</span></span>;
+  })}</span>;
 }
 
 function Welcome({ start, demo }: { start: () => void; demo: () => void }) {
@@ -122,6 +185,7 @@ function Onboarding({ profile, setProfile, finish, back }: { profile: Profile; s
     <div className="step-body" key="body">
       <p className="why-copy">身體資料只用來估算每日範圍；目標會影響份量與下一餐建議，可隨時到「我的資料」修改。</p>
       <div className="form-grid">
+        <label className="name-field">姓名或暱稱<input value={profile.name} onChange={event => update("name", event.target.value)} placeholder="例如：小明" maxLength={20} /></label>
         <label>年齡<input inputMode="numeric" value={profile.age} onChange={event => update("age", event.target.value)} /><span>歲</span></label>
         <label>身高<input inputMode="numeric" value={profile.height} onChange={event => update("height", event.target.value)} /><span>cm</span></label>
         <label>體重<input inputMode="numeric" value={profile.weight} onChange={event => update("weight", event.target.value)} /><span>kg</span></label>
@@ -145,14 +209,14 @@ function Onboarding({ profile, setProfile, finish, back }: { profile: Profile; s
     </div>,
   ];
   const titles = ["先讓建議符合你的身體", "把現實生活放進推薦裡", "決定什麼時候提醒你"];
-  const invalid = step === 0 && (!profile.age || !profile.height || !profile.weight);
+  const invalid = step === 0 && (!profile.name.trim() || !profile.age || !profile.height || !profile.weight);
   return <main className="onboarding-screen screen-enter"><header className="onboarding-header"><button onClick={step === 0 ? back : () => setStep(step - 1)} aria-label="上一步">←</button><span>步驟 {step + 1} / 3</span><Brand /></header><div className="step-track"><i style={{ width: `${((step + 1) / 3) * 100}%` }} /></div><section className="onboarding-content"><span className="eyebrow">SETUP / 0{step + 1}</span><h1>{titles[step]}</h1>{steps[step]}</section><div className="sticky-action"><button disabled={invalid} className="primary-btn" onClick={step === 2 ? finish : () => setStep(step + 1)}>{step === 2 ? "完成，看看今天" : "下一步"}<span>→</span></button></div></main>;
 }
 
 function RingMetric({ label, current, target, unit }: { label: string; current: number; target: number; unit: string }) {
   const remaining = Math.max(0, target - current);
-  const degrees = Math.min(360, Math.round(current / target * 360));
-  return <div className="ring-metric"><i aria-hidden="true" style={{ background: `conic-gradient(var(--orange) ${degrees}deg, #fff ${degrees}deg)` }} /><span><small>尚缺 {label}</small><strong>{remaining.toLocaleString()}<b>{unit}</b></strong></span></div>;
+  const degrees = Math.min(360, Math.max(0, Math.round(current / target * 360)));
+  return <div className="ring-metric"><i aria-hidden="true" style={{ "--ring-progress-target": `${degrees}deg`, "--ring-orange-target": `${Math.round(degrees * .58)}deg` } as React.CSSProperties} /><span><small>尚缺 {label}</small><strong>{remaining.toLocaleString()}<b>{unit}</b></strong></span></div>;
 }
 
 function ActivityMetric({ label, value, target, unit }: { label: string; value: number; target: number; unit: string }) {
@@ -160,25 +224,40 @@ function ActivityMetric({ label, value, target, unit }: { label: string; value: 
   return <div className="activity-metric"><i aria-hidden="true" style={{ background: `conic-gradient(var(--orange) ${degrees}deg, #fff ${degrees}deg)` }} /><span><small>{label}</small><strong>{value}<b>{unit}</b></strong><em>{label === "運動量" ? `目標 ${target} 分鐘` : "今日活動估算"}</em></span></div>;
 }
 
-function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: number; go: (screen: Screen) => void }) {
+function Dashboard({ meals, recordDays, profile, go, editMeal }: { meals: Meal[]; recordDays: number; profile: Profile; go: (screen: Screen) => void; editMeal: (meal: Meal) => void }) {
   const [dashboardPage, setDashboardPage] = useState(0);
   const [trendOpen, setTrendOpen] = useState(false);
   const [mealsOpen, setMealsOpen] = useState(true);
   const [cardTouchStart, setCardTouchStart] = useState<number | null>(null);
-  const eaten = base.calories + (meal?.calories || 0);
+  const [now, setNow] = useState(() => new Date());
+  const targets = useMemo(() => calculateNutritionTargets(profile), [profile.age, profile.height, profile.weight, profile.gender, profile.activity, profile.goal]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const greeting = now.getHours() < 12 ? "早安" : now.getHours() < 18 ? "午安" : "晚安";
+  const displayName = profile.name && profile.name !== "7000" ? profile.name : "朋友";
+  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(now).toUpperCase();
+  const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit" }).format(now).toUpperCase();
+  const meal = meals.length ? meals[meals.length - 1] : null;
+  const totals = meals.reduce((sum, item) => ({ calories: sum.calories + item.calories, protein: sum.protein + item.protein, carbs: sum.carbs + item.carbs, fat: sum.fat + item.fat }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const eaten = base.calories + totals.calories;
   const remaining = Math.max(0, targets.calories - eaten);
-  const protein = meal?.protein || 0;
-  const carbs = base.carbs + (meal?.carbs || 0);
-  const fat = base.fat + (meal?.fat || 0);
+  const protein = base.protein + totals.protein;
+  const carbs = base.carbs + totals.carbs;
+  const fat = base.fat + totals.fat;
   const endCardTouch = (x: number) => {
     if (cardTouchStart === null) return;
     if (Math.abs(x - cardTouchStart) > 36) setDashboardPage(x < cardTouchStart ? 1 : 0);
     setCardTouchStart(null);
   };
   return <main className="app-screen home-screen screen-enter">
-    <AppHeader />
+    <header className="home-reference-header">
+      <div><strong>{greeting}，{displayName}</strong><span>{weekday} · {monthDay}</span></div>
+      <button className="home-avatar" onClick={() => go("profile")} aria-label="開啟個人資料">{profile.avatar ? <img src={profile.avatar} alt="" /> : <ProfileIcon />}</button>
+    </header>
     <section className="priority-overview">
-      <div className="hero reference-hero"><span className="eyebrow">熱 量 尚 缺</span><div className="calorie-number">{remaining.toLocaleString()}<small>卡</small></div></div>
+      <div className="hero reference-hero"><span className="eyebrow">熱 量 尚 缺</span><div className="calorie-number"><CalorieRollingNumber value={remaining} /><small>卡</small></div></div>
     </section>
     <div className="dashboard-swipe-card">
       <div className="dashboard-data-window" role="slider" aria-label="營養與運動數值，可左右滑動切換" aria-valuemin={0} aria-valuemax={1} aria-valuenow={dashboardPage} aria-valuetext={dashboardPage === 0 ? "營養摘要" : "活動摘要"} tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") setDashboardPage(1); if (event.key === "ArrowLeft") setDashboardPage(0); }} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setCardTouchStart(event.clientX); }} onPointerUp={event => endCardTouch(event.clientX)} onPointerCancel={() => setCardTouchStart(null)}>
@@ -188,11 +267,11 @@ function Dashboard({ meal, recordDays, go }: { meal: Meal | null; recordDays: nu
         </div>
         <div className="dashboard-card-pager"><span aria-hidden="true">{dashboardPage === 0 ? "←" : "→"}</span><div><button className={dashboardPage === 0 ? "active" : ""} onClick={() => setDashboardPage(0)} aria-label="顯示營養摘要" /><button className={dashboardPage === 1 ? "active" : ""} onClick={() => setDashboardPage(1)} aria-label="顯示活動摘要" /></div></div>
       </div>
-      <div className="dashboard-fixed-figure"><span className="dot-field" aria-hidden="true" /><YellowManModel /></div>
+      <div className="dashboard-fixed-figure"><span className="dot-field" aria-hidden="true" /><YellowManModel gender={profile.gender} /></div>
     </div>
     <section className="insight-strip"><span>NEXT MEAL / AI DIRECTION</span><p>{meal ? "蛋白質仍有缺口，下一餐選雞胸、豆腐、魚或茶葉蛋，再加一份蔬菜會更平衡。" : "目前資料還很少。拍下餐點後，我們會把複雜數字整理成下一步。"}</p><button onClick={() => go(meal ? "nearby" : "scan")}>{meal ? "查看下一餐建議" : "開始記錄"} →</button></section>
     <section className="collapsible-card"><button className="card-toggle" onClick={() => setTrendOpen(!trendOpen)} aria-expanded={trendOpen}><span><small>體態趨勢／平衡分數</small><strong>{recordDays < 3 ? `${recordDays} / 3 天` : "76 分"}</strong></span><i>{trendOpen ? "−" : "＋"}</i></button>{trendOpen && <div className="card-detail">{recordDays < 3 ? <div className="unlock"><span style={{ width: `${recordDays / 3 * 100}%` }} /><p>再記錄 {3 - recordDays} 天可查看週趨勢。現在先專注把日常留下來就好。</p></div> : <><div className="mini-bars compact-bars">{[48, 62, 55, 70, 66, 82, 76].map((value, index) => <i key={index} style={{ height: `${value}%` }} />)}</div><p>本週平衡分數穩定上升，飲水與蛋白質最值得繼續留意。</p></>}</div>}</section>
-    <section className="collapsible-card"><button className="card-toggle" onClick={() => setMealsOpen(!mealsOpen)} aria-expanded={mealsOpen}><span><small>今日紀錄餐點</small><strong>{meal ? "1 餐" : "還沒有紀錄"}</strong></span><i>{mealsOpen ? "−" : "＋"}</i></button>{mealsOpen && <div className="card-detail">{meal ? <button className="meal-row" onClick={() => go("edit-meal")}><span><b>{meal.name}</b><small>{meal.calories} kcal · 估算</small></span><i>編輯 →</i></button> : <button className="empty-meal" onClick={() => go("scan")}>拍下第一餐，AI 幫你開始分析 <span>＋</span></button>}</div>}</section>
+    <section className="collapsible-card"><button className="card-toggle" onClick={() => setMealsOpen(!mealsOpen)} aria-expanded={mealsOpen}><span><small>今日紀錄餐點</small><strong>{meals.length ? `${meals.length} 餐` : "還沒有紀錄"}</strong></span><i>{mealsOpen ? "−" : "＋"}</i></button>{mealsOpen && <div className="card-detail">{meals.length ? <div className="meal-list">{[...meals].reverse().map(item => <button className="meal-row" key={item.id} onClick={() => editMeal(item)}><span><b>{item.name}</b><small>{item.calories} kcal · 估算</small></span><i>編輯 →</i></button>)}</div> : <button className="empty-meal" onClick={() => go("scan")}>拍下第一餐，AI 幫你開始分析 <span>＋</span></button>}</div>}</section>
     <BottomNav screen="home" go={go} />
   </main>;
 }
@@ -262,7 +341,8 @@ function Analysis({ initialMeal, save, go }: { initialMeal: Meal; save: (meal: M
   return <main className="app-screen analysis-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回掃描">←</button><span>AI 分析結果</span><i>估算</i></header><section className="food-visual"><div className="plate"><span className="food rice" /><span className="food chicken" /><span className="food greens g1" /><span className="food greens g2" /></div><span className="detected">辨識信心高 · 可直接儲存</span></section><section className="analysis-content"><span className="eyebrow">CHICKEN RICE BOWL</span><h1>{meal.name}</h1><p className="estimate-note">以下為 AI 估算值，會因食材與烹調方式不同；信心低時才會請你確認。</p><div className="macro-summary"><span><b>{meal.calories}</b> kcal</span><span><b>{meal.protein}g</b> 蛋白質</span><span><b>{meal.carbs}g</b> 碳水</span><span><b>{meal.fat}g</b> 脂肪</span></div><div className="detected-foods">{meal.ingredients.map(item => <span key={item}>{item}</span>)}</div><button className="primary-btn" onClick={() => save(meal)}>一鍵儲存這餐 <span>→</span></button><button className="advanced-toggle" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{advanced ? "收起進階調整" : "進階調整食材與數值"}<span>{advanced ? "−" : "＋"}</span></button>{advanced && <div className="advanced-panel"><Option title="飯量" values={["半碗", "一碗", "加飯"]} value={rice} setValue={setRice} /><Option title="醬料" values={["少", "正常", "多"]} value={sauce} setValue={setSauce} /><Option title="實際吃完" values={["吃完", "剩一些"]} value={completion} setValue={setCompletion} /><label>食材（以頓號分隔）<input value={ingredients} onChange={event => setIngredients(event.target.value)} /></label><label>自行輸入熱量<input inputMode="numeric" placeholder={String(meal.calories)} value={customCalories} onChange={event => setCustomCalories(event.target.value)} /></label></div>}</section></main>;
 }
 
-function Result({ meal, go }: { meal: Meal; go: (screen: Screen) => void }) {
+function Result({ meal, profile, go }: { meal: Meal; profile: Profile; go: (screen: Screen) => void }) {
+  const targets = calculateNutritionTargets(profile);
   return <main className="success-screen result-screen screen-enter"><Brand /><div className="success-mark">✓</div><span className="eyebrow">MEAL SAVED</span><h1>這餐，完成。</h1><p>已加入 <b>{meal.calories} kcal</b>（估算）。今天油脂已經較充足，下一餐用清爽蛋白質與蔬菜接住就好。</p><section className="updated-progress"><span>蛋白質進度更新</span><strong>{meal.protein} / {targets.protein}g</strong><div className="progress-track"><i className="accent animate-progress" style={{ width: `${meal.protein / targets.protein * 100}%` }} /></div></section><section className="result-next"><span className="eyebrow">更新後的下一餐</span><h2>清爽蛋白質＋兩份蔬菜</h2><p>魚、豆腐或雞肉都可以；主食保留半碗到一碗。</p><button onClick={() => go("nearby")}>查看附近選擇 →</button></section><div className="success-actions"><button className="primary-btn" onClick={() => go("home")}>回到首頁 <span>→</span></button><button className="secondary-btn" onClick={() => go("nearby")}>找附近吃什麼</button></div><Wave /></main>;
 }
 
@@ -302,18 +382,26 @@ function EditMeal({ meal, update, remove, go }: { meal: Meal; update: (meal: Mea
 }
 
 function ProfileSettings({ profile, save, go }: { profile: Profile; save: (profile: Profile) => void; go: (screen: Screen) => void }) {
-  const [draft, setDraft] = useState(profile);
+  const [draft, setDraft] = useState(() => profile.name === "7000" ? { ...profile, name: "" } : profile);
   const [pendingScreen, setPendingScreen] = useState<Screen | null>(null);
   const update = <K extends keyof Profile>(key: K, value: Profile[K]) => setDraft(current => ({ ...current, [key]: value }));
   const toggle = (key: "preferences" | "exclusions" | "contexts", value: string) => update(key, draft[key].includes(value) ? draft[key].filter(item => item !== value) : [...draft[key], value]);
-  const invalid = !draft.age.trim() || !draft.height.trim() || !draft.weight.trim();
+  const invalid = !draft.name.trim() || !draft.age.trim() || !draft.height.trim() || !draft.weight.trim();
   const dirty = JSON.stringify(draft) !== JSON.stringify(profile);
+  const previewTargets = calculateNutritionTargets(draft);
   const leave = (next: Screen) => dirty ? setPendingScreen(next) : go(next);
   const saveAndGo = (next: Screen) => { save(draft); go(next); };
+  const chooseAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try { update("avatar", await avatarDataUrl(file)); } catch { /* keep the current avatar */ }
+    event.target.value = "";
+  };
   return <><main className="app-screen settings-screen screen-enter">
     <header className="simple-header"><button onClick={() => leave("profile")} aria-label="返回我的資料">←</button><span>資料設定</span><i /></header>
     <section className="settings-intro"><span className="eyebrow">PROFILE SETTINGS</span><h1>調整你的飲食方向</h1><p>身體與目標、飲食偏好和外食情境都能在這一頁修改；儲存後會一起更新建議。</p></section>
-    <section className="settings-section" id="settings-body"><div className="settings-section-title"><span>01</span><div><h2>身體與目標</h2><p>用來估算每日範圍與份量方向。</p></div></div><div className="form-grid"><label>年齡<input inputMode="numeric" value={draft.age} onChange={event => update("age", event.target.value)} /><span>歲</span></label><label>身高<input inputMode="numeric" value={draft.height} onChange={event => update("height", event.target.value)} /><span>cm</span></label><label>體重<input inputMode="numeric" value={draft.weight} onChange={event => update("weight", event.target.value)} /><span>kg</span></label><label>性別<select value={draft.gender} onChange={event => update("gender", event.target.value)}><option>女性</option><option>男性</option></select></label></div><div className="field-block"><span className="field-title">目前目標</span><div className="chip-row wrap">{["減脂", "維持", "增肌", "均衡飲食"].map(value => <ToggleChip key={value} value={value} selected={draft.goal === value} onClick={() => update("goal", value)} />)}</div></div><div className="field-block"><span className="field-title">運動量</span><div className="chip-row wrap">{["幾乎不運動", "每週 1 天", "每週 2–3 天", "每週 4 天以上"].map(value => <ToggleChip key={value} value={value} selected={draft.activity === value} onClick={() => update("activity", value)} />)}</div></div></section>
+    <section className="settings-identity"><label className="avatar-upload"><span>{draft.avatar ? <img src={draft.avatar} alt="大頭貼預覽" /> : <ProfileIcon />}</span><b>選擇大頭貼</b><small>照片會裁切為正方形</small><input type="file" accept="image/*" onChange={chooseAvatar} /></label><label className="profile-name-field"><span>姓名或暱稱</span><input value={draft.name} onChange={event => update("name", event.target.value)} placeholder="輸入姓名或暱稱" maxLength={20} /></label></section>
+    <section className="settings-section" id="settings-body"><div className="settings-section-title"><span>01</span><div><h2>身體與目標</h2><p>用來估算每日範圍與份量方向。</p></div></div><div className="form-grid"><label>年齡<input inputMode="numeric" value={draft.age} onChange={event => update("age", event.target.value)} /><span>歲</span></label><label>身高<input inputMode="numeric" value={draft.height} onChange={event => update("height", event.target.value)} /><span>cm</span></label><label>體重<input inputMode="numeric" value={draft.weight} onChange={event => update("weight", event.target.value)} /><span>kg</span></label><label>性別<select value={draft.gender} onChange={event => update("gender", event.target.value)}><option>女性</option><option>男性</option></select></label></div><div className="field-block"><span className="field-title">目前目標</span><div className="chip-row wrap">{["減脂", "維持", "增肌", "均衡飲食"].map(value => <ToggleChip key={value} value={value} selected={draft.goal === value} onClick={() => update("goal", value)} />)}</div></div><div className="field-block"><span className="field-title">運動量</span><div className="chip-row wrap">{["幾乎不運動", "每週 1 天", "每週 2–3 天", "每週 4 天以上"].map(value => <ToggleChip key={value} value={value} selected={draft.activity === value} onClick={() => update("activity", value)} />)}</div></div><div className="nutrition-target-preview"><span>目前每日估算</span><strong>{previewTargets.calories.toLocaleString()} kcal</strong><div><b>蛋白質 {previewTargets.protein}g</b><b>碳水 {previewTargets.carbs}g</b><b>脂肪 {previewTargets.fat}g</b></div><small>會隨上方資料即時試算；儲存後同步更新首頁。此為生活管理估算，非醫療處方。</small></div></section>
     <section className="settings-section" id="settings-preferences"><div className="settings-section-title"><span>02</span><div><h2>飲食偏好</h2><p>硬性限制會排除；口味只影響排序。</p></div></div><div className="field-block"><span className="field-title">過敏／宗教／醫療限制</span><div className="chip-row wrap">{["不吃牛", "無乳製品", "堅果過敏", "素食"].map(value => <ToggleChip key={value} value={value} selected={draft.exclusions.includes(value)} onClick={() => toggle("exclusions", value)} />)}</div></div><div className="field-block"><span className="field-title">口味與排序偏好</span><div className="chip-row wrap">{["少辣", "低糖", "預算 150 內"].map(value => <ToggleChip key={value} value={value} selected={draft.preferences.includes(value)} onClick={() => toggle("preferences", value)} />)}</div></div></section>
     <section className="settings-section" id="settings-contexts"><div className="settings-section-title"><span>03</span><div><h2>外食情境</h2><p>讓下一餐推薦更貼近日常選擇。</p></div></div><div className="field-block"><span className="field-title">常見用餐方式</span><div className="chip-row wrap">{["便利商店", "便當", "餐廳", "自煮"].map(value => <ToggleChip key={value} value={value} selected={draft.contexts.includes(value)} onClick={() => toggle("contexts", value)} />)}</div></div><label className="select-field">外食頻率<select value={draft.frequency} onChange={event => update("frequency", event.target.value)}><option>幾乎不外食</option><option>每週外食 1–3 次</option><option>每週外食 4–6 次</option><option>幾乎每天外食</option></select></label></section>
     <div className="settings-actions"><button className="primary-btn" disabled={invalid} onClick={() => saveAndGo("profile")}>儲存所有設定 <span>→</span></button><button className="secondary-btn" onClick={() => leave("profile")}>取消</button></div>
@@ -322,7 +410,8 @@ function ProfileSettings({ profile, save, go }: { profile: Profile; save: (profi
 }
 
 function ProfileScreen({ profile, setProfile, editSetup, reset, go }: { profile: Profile; setProfile: (profile: Profile) => void; editSetup: (section: SettingsSection) => void; reset: () => void; go: (screen: Screen) => void }) {
-  return <main className="app-screen profile-screen screen-enter"><AppHeader label="ME / 02" /><section className="profile-hero"><span className="avatar">意</span><div><span className="eyebrow">目前目標</span><h1>{profile.goal}</h1><p>{profile.activity}</p></div></section><section className="daily-advice"><span>每日建議</span><strong>1,900 kcal · 蛋白質 120g</strong><small>依目前資料估算，並非醫療處方。</small></section><section className="profile-list"><button onClick={() => editSetup("body")}><span>身體與目標</span><b>{profile.height}cm · {profile.weight}kg →</b></button><button onClick={() => editSetup("preferences")}><span>飲食偏好</span><b>{[...profile.preferences, ...profile.exclusions].join("、") || "無"} →</b></button><button onClick={() => editSetup("contexts")}><span>外食情境</span><b>{profile.contexts.join("、") || "未設定"} →</b></button><button onClick={() => setProfile({ ...profile, reminder: profile.reminder === "不要提醒" ? "用餐前 20 分鐘" : "不要提醒" })}><span>提醒設定</span><b>{profile.reminder}</b></button><button onClick={() => setProfile({ ...profile, location: profile.location === "allowed" ? "denied" : "allowed" })}><span>定位與隱私權</span><b>{profile.location === "allowed" ? "已允許" : "手動地點"}</b></button></section><button className="reset-btn" onClick={reset}>重設示範資料</button><p className="prototype-note">MindMeal MVP · 所有健康數值皆為互動示範</p><BottomNav screen="profile" go={go} /></main>;
+  const targets = calculateNutritionTargets(profile);
+  return <main className="app-screen profile-screen screen-enter"><AppHeader label="ME / 02" /><section className="profile-hero"><span className="avatar">意</span><div><span className="eyebrow">目前目標</span><h1>{profile.goal}</h1><p>{profile.activity}</p></div></section><section className="daily-advice"><span>每日建議</span><strong>{targets.calories.toLocaleString()} kcal · 蛋白質 {targets.protein}g</strong><small>依目前資料估算，並非醫療處方。</small></section><section className="profile-list"><button onClick={() => editSetup("body")}><span>身體與目標</span><b>{profile.height}cm · {profile.weight}kg →</b></button><button onClick={() => editSetup("preferences")}><span>飲食偏好</span><b>{[...profile.preferences, ...profile.exclusions].join("、") || "無"} →</b></button><button onClick={() => editSetup("contexts")}><span>外食情境</span><b>{profile.contexts.join("、") || "未設定"} →</b></button><button onClick={() => setProfile({ ...profile, reminder: profile.reminder === "不要提醒" ? "用餐前 20 分鐘" : "不要提醒" })}><span>提醒設定</span><b>{profile.reminder}</b></button><button onClick={() => setProfile({ ...profile, location: profile.location === "allowed" ? "denied" : "allowed" })}><span>定位與隱私權</span><b>{profile.location === "allowed" ? "已允許" : "手動地點"}</b></button></section><button className="reset-btn" onClick={reset}>重設示範資料</button><p className="prototype-note">MindMeal MVP · 所有健康數值皆為互動示範</p><BottomNav screen="profile" go={go} /></main>;
 }
 
 export default function HomePage() {
@@ -330,30 +419,44 @@ export default function HomePage() {
   const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [selectedMeal, setSelectedMeal] = useState<Meal>(demoMeal);
   const [albumPermission, setAlbumPermission] = useState<AlbumPermission>("unknown");
-  const [meal, setMeal] = useState<Meal | null>(null);
+  const [meals, setMeals] = useState<Meal[]>([]);
   const [recordDays, setRecordDays] = useState(1);
   const [ready, setReady] = useState(false);
-  const [undo, setUndo] = useState<{ message: string; meal: Meal | null } | null>(null);
+  const [undo, setUndo] = useState<{ message: string; meals: Meal[] } | null>(null);
+  const meal = meals.length ? meals[meals.length - 1] : null;
   useEffect(() => {
-    const restore = window.setTimeout(() => {
+    const goHome = () => {
+      setScreen("home");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    window.addEventListener("mindmeal-go-home", goHome);
+    return () => window.removeEventListener("mindmeal-go-home", goHome);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const restore = window.setTimeout(async () => {
+      let restoredProfile = emptyProfile;
       try {
         const raw = window.localStorage.getItem("mindmeal-demo");
         if (window.localStorage.getItem("mindmeal-album-permission") === "allowed") setAlbumPermission("allowed");
         if (raw) {
           const data = JSON.parse(raw);
-          setProfile(normalizeProfile(data.profile));
-          setMeal(normalizeMeal(data.meal));
-          setRecordDays(data.recordDays || (data.meal ? 7 : 1));
-          setScreen(data.onboarded ? "home" : "welcome");
+          restoredProfile = normalizeProfile(data.profile);
+          setProfile(restoredProfile);
+          const restoredMeals = Array.isArray(data.meals) ? data.meals.map((item: Partial<Meal>) => normalizeMeal(item)).filter(Boolean) as Meal[] : (normalizeMeal(data.meal) ? [normalizeMeal(data.meal) as Meal] : []);
+          setMeals(restoredMeals);
+          setRecordDays(data.recordDays || (restoredMeals.length ? 7 : 1));
+          setScreen(data.onboarded ? (restoredProfile.name.trim() ? "home" : "onboarding") : "welcome");
         }
       } catch { /* use demo defaults */ }
-      setReady(true);
+      await preloadYellowManModel(restoredProfile.gender);
+      if (active) setReady(true);
     }, 0);
-    return () => window.clearTimeout(restore);
+    return () => { active = false; window.clearTimeout(restore); };
   }, []);
   useEffect(() => {
-    if (ready) window.localStorage.setItem("mindmeal-demo", JSON.stringify({ profile, meal, recordDays, onboarded: screen !== "welcome" && screen !== "onboarding" }));
-  }, [profile, meal, recordDays, screen, ready]);
+    if (ready) window.localStorage.setItem("mindmeal-demo", JSON.stringify({ profile, meals, meal, recordDays, onboarded: screen !== "welcome" && screen !== "onboarding" }));
+  }, [profile, meals, meal, recordDays, screen, ready]);
   useEffect(() => {
     if (ready && albumPermission === "allowed") window.localStorage.setItem("mindmeal-album-permission", "allowed");
   }, [albumPermission, ready]);
@@ -366,20 +469,20 @@ export default function HomePage() {
     window.setTimeout(() => document.getElementById(`settings-${section}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 180);
   };
   const saveMeal = (next: Meal) => {
-    setMeal({ ...next, id: Date.now() });
+    setMeals(current => [...current, { ...next, id: Date.now() }]);
     setRecordDays(Math.max(2, recordDays));
     go("result");
   };
   const updateMeal = (next: Meal) => {
-    const previous = meal;
-    setMeal(next);
-    setUndo({ message: "餐點已更新", meal: previous });
+    const previous = meals;
+    setMeals(current => current.map(item => item.id === next.id ? next : item));
+    setUndo({ message: "餐點已更新", meals: previous });
     window.setTimeout(() => setUndo(null), 5000);
   };
   const removeMeal = () => {
-    const previous = meal;
-    setMeal(null);
-    setUndo({ message: "餐點已刪除", meal: previous });
+    const previous = meals;
+    setMeals(current => current.filter(item => item.id !== selectedMeal.id));
+    setUndo({ message: "餐點已刪除", meals: previous });
     go("home");
     window.setTimeout(() => setUndo(null), 5000);
   };
@@ -387,26 +490,26 @@ export default function HomePage() {
     window.localStorage.removeItem("mindmeal-demo");
     window.localStorage.removeItem("mindmeal-album-permission");
     setProfile(emptyProfile);
-    setMeal(null);
+    setMeals([]);
     setRecordDays(1);
     setAlbumPermission("unknown");
     setScreen("welcome");
   };
   if (!ready) return <main className="loading-screen"><Brand /><span>LOADING DIRECTION</span></main>;
   let content;
-  if (screen === "welcome") content = <Welcome start={() => go("onboarding")} demo={() => { setMeal(demoMeal); setRecordDays(7); go("home"); }} />;
+  if (screen === "welcome") content = <Welcome start={() => go("onboarding")} demo={() => { setMeals([demoMeal]); setRecordDays(7); go("home"); }} />;
   else if (screen === "onboarding") content = <Onboarding profile={profile} setProfile={setProfile} finish={() => go("home")} back={() => go("welcome")} />;
   else if (screen === "scan") content = <Scan go={go} chooseMeal={setSelectedMeal} albumPermission={albumPermission} allowAlbum={() => setAlbumPermission("allowed")} />;
   else if (screen === "album") content = <AlbumGallery choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
   else if (screen === "food-search") content = <FoodSearch choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
   else if (screen === "manual-entry") content = <ManualEntry choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
   else if (screen === "analysis") content = <Analysis initialMeal={selectedMeal} go={go} save={saveMeal} />;
-  else if (screen === "result" && meal) content = <Result meal={meal} go={go} />;
+  else if (screen === "result" && meal) content = <Result meal={meal} profile={profile} go={go} />;
   else if (screen === "nearby") content = <Nearby profile={profile} setProfile={setProfile} go={go} />;
   else if (screen === "store") content = <StoreDetail go={go} />;
   else if (screen === "profile") content = <ProfileScreen profile={profile} setProfile={setProfile} editSetup={openSettings} reset={reset} go={go} />;
   else if (screen === "settings") content = <ProfileSettings profile={profile} save={setProfile} go={go} />;
-  else if (screen === "edit-meal" && meal) content = <EditMeal meal={meal} update={updateMeal} remove={removeMeal} go={go} />;
-  else content = <Dashboard meal={meal} recordDays={recordDays} go={go} />;
-  return <>{content}{undo && <div className="undo-toast" role="status"><span>{undo.message}</span><button onClick={() => { setMeal(undo.meal); setUndo(null); }}>復原</button></div>}</>;
+  else if (screen === "edit-meal") content = <EditMeal meal={selectedMeal} update={updateMeal} remove={removeMeal} go={go} />;
+  else content = <Dashboard meals={meals} recordDays={recordDays} profile={profile} go={go} editMeal={item => { setSelectedMeal(item); go("edit-meal"); }} />;
+  return <>{content}{undo && <div className="undo-toast" role="status"><span>{undo.message}</span><button onClick={() => { setMeals(undo.meals); setUndo(null); }}>復原</button></div>}</>;
 }

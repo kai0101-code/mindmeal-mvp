@@ -27,7 +27,8 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /YellowManModel/);
-  assert.match(yellowMan, /BASE_URL.*models\/YELLOW_MAN\.glb/);
+  assert.match(yellowMan, /YELLOW_MAN\.glb/);
+  assert.match(yellowMan, /FEMALE_MANNEQUIN\.glb/);
   assert.match(page, /function RingMetric/);
   assert.match(page, /熱 量 尚 缺/);
   assert.doesNotMatch(page, /className="gap-tabs"/);
@@ -60,5 +61,9 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /scrollIntoView\(\{ behavior: "smooth"/);
   assert.match(page, /editSetup\("contexts"\)/);
   assert.match(page, /id="settings-contexts"/);
+  assert.match(page, /function calculateNutritionTargets/);
+  assert.match(page, /Mifflin–St Jeor/);
+  assert.match(page, /目前每日估算/);
+  assert.match(page, /previewTargets\.calories/);
   assert.doesNotMatch(page, /<option>其他<\/option>/);
 });
