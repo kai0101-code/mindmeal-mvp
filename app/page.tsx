@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import YellowManModel, { preloadYellowManModel } from "./YellowManModel";
 
 type Screen = "welcome" | "onboarding" | "home" | "scan" | "album" | "food-search" | "manual-entry" | "analysis" | "result" | "nearby" | "store" | "profile" | "settings" | "edit-meal";
@@ -10,6 +10,8 @@ type LocationPermission = "unknown" | "allowed" | "denied";
 type Profile = {
   name: string;
   avatar: string;
+  avatarX: number;
+  avatarY: number;
   age: string;
   height: string;
   weight: string;
@@ -41,17 +43,19 @@ type NutritionTargets = { calories: number; protein: number; carbs: number; fat:
 const emptyProfile: Profile = {
   name: "",
   avatar: "",
+  avatarX: 50,
+  avatarY: 50,
   age: "28",
   height: "168",
   weight: "62",
   gender: "女性",
-  activity: "每週 2–3 天",
-  goal: "均衡飲食",
-  preferences: ["少辣"],
+  activity: "",
+  goal: "減脂",
+  preferences: [],
   exclusions: [],
-  contexts: ["便利商店", "便當"],
-  frequency: "每週外食 4–6 次",
-  meals: ["午餐", "晚餐"],
+  contexts: [],
+  frequency: "幾乎不外食",
+  meals: ["早餐"],
   reminder: "用餐前 20 分鐘",
   location: "unknown",
 };
@@ -111,24 +115,24 @@ function avatarDataUrl(file: File): Promise<string> {
     const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
-      const size = 256;
+      const maxSize = 512;
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
       const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
       const context = canvas.getContext("2d");
       if (!context) { URL.revokeObjectURL(url); reject(new Error("Canvas unavailable")); return; }
-      const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
-      const sourceX = (image.naturalWidth - sourceSize) / 2;
-      const sourceY = (image.naturalHeight - sourceSize) / 2;
-      context.fillStyle = "#fff";
-      context.fillRect(0, 0, size, size);
-      context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL("image/jpeg", .84));
     };
     image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Invalid image")); };
     image.src = url;
   });
+}
+
+function avatarTransform(x: number, y: number) {
+  return `translate(${(50 - x) * .35}%, ${(50 - y) * .35}%) scale(1.3)`;
 }
 
 function Brand({ onHome }: { onHome?: () => void }) {
@@ -170,7 +174,7 @@ function CalorieRollingNumber({ value }: { value: number }) {
 }
 
 function Welcome({ start, demo }: { start: () => void; demo: () => void }) {
-  return <main className="welcome-screen screen-enter"><div className="welcome-top"><Brand /><span className="edition">MVP / 02</span></div><section className="welcome-copy"><span className="eyebrow">EAT WITH INTENTION.</span><h1>今天吃什麼，<br />才能符合身體需求？</h1><p>不用計算每一口。拍下餐點，讓有意食告訴你下一餐的方向。</p></section><div className="welcome-orbit" aria-hidden="true"><span>有意</span><i /></div><div className="welcome-actions"><button className="primary-btn" onClick={start}>三步完成設定 <span>→</span></button><button className="text-btn" onClick={demo}>直接查看示範首頁</button></div><Wave /></main>;
+  return <main className="welcome-screen screen-enter"><div className="welcome-top"><Brand /></div><section className="welcome-copy"><span className="eyebrow">EAT WITH INTENTION.</span><h1>今天吃什麼？</h1><p>不用計算每一口<br />拍下餐點<br />讓有意食告訴你下一餐的方向</p></section><div className="welcome-orbit" aria-hidden="true"><span /><i /></div><div className="welcome-actions"><button className="primary-btn" onClick={start}>三步完成設定 <span>→</span></button><button className="text-btn" onClick={demo}>直接查看示範首頁</button></div><Wave /></main>;
 }
 
 function ToggleChip({ value, selected, onClick }: { value: string; selected: boolean; onClick: () => void }) {
@@ -179,10 +183,43 @@ function ToggleChip({ value, selected, onClick }: { value: string; selected: boo
 
 function Onboarding({ profile, setProfile, finish, back }: { profile: Profile; setProfile: (profile: Profile) => void; finish: () => void; back: () => void }) {
   const [step, setStep] = useState(0);
+  const avatarDrag = useRef({ pointerX: 0, pointerY: 0, avatarX: 50, avatarY: 50, moved: false });
+  const avatarImage = useRef<HTMLImageElement>(null);
   const update = <K extends keyof Profile>(key: K, value: Profile[K]) => setProfile({ ...profile, [key]: value });
   const toggle = (key: "preferences" | "exclusions" | "contexts" | "meals", value: string) => update(key, profile[key].includes(value) ? profile[key].filter(item => item !== value) : [...profile[key], value]);
+  const chooseAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try { setProfile({ ...profile, avatar: await avatarDataUrl(file), avatarX: 50, avatarY: 50 }); } catch { /* keep the current avatar */ }
+    event.target.value = "";
+  };
+  const startAvatarDrag = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!profile.avatar) return;
+    avatarDrag.current = { pointerX: event.clientX, pointerY: event.clientY, avatarX: profile.avatarX, avatarY: profile.avatarY, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveAvatar = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!profile.avatar || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    const dx = event.clientX - avatarDrag.current.pointerX;
+    const dy = event.clientY - avatarDrag.current.pointerY;
+    if (Math.abs(dx) + Math.abs(dy) > 3) avatarDrag.current.moved = true;
+    const clamp = (value: number) => Math.max(17, Math.min(83, value));
+    const avatarX = clamp(avatarDrag.current.avatarX - dx);
+    const avatarY = clamp(avatarDrag.current.avatarY - dy);
+    if (avatarImage.current) avatarImage.current.style.transform = avatarTransform(avatarX, avatarY);
+    avatarDrag.current.avatarX = avatarX;
+    avatarDrag.current.avatarY = avatarY;
+    avatarDrag.current.pointerX = event.clientX;
+    avatarDrag.current.pointerY = event.clientY;
+    event.preventDefault();
+  };
+  const finishAvatarDrag = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!profile.avatar || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (avatarDrag.current.moved) setProfile({ ...profile, avatarX: avatarDrag.current.avatarX, avatarY: avatarDrag.current.avatarY });
+  };
   const steps = [
-    <div className="step-body" key="body">
+    <div className="step-body body-step" key="body">
       <p className="why-copy">身體資料只用來估算每日範圍；目標會影響份量與下一餐建議，可隨時到「我的資料」修改。</p>
       <div className="form-grid">
         <label className="name-field">姓名或暱稱<input value={profile.name} onChange={event => update("name", event.target.value)} placeholder="例如：小明" maxLength={20} /></label>
@@ -191,26 +228,29 @@ function Onboarding({ profile, setProfile, finish, back }: { profile: Profile; s
         <label>體重<input inputMode="numeric" value={profile.weight} onChange={event => update("weight", event.target.value)} /><span>kg</span></label>
         <label>性別<select value={profile.gender} onChange={event => update("gender", event.target.value)}><option>女性</option><option>男性</option></select></label>
       </div>
-      <div className="field-block"><span className="field-title">目前目標</span><div className="chip-row wrap">{["減脂", "維持", "增肌", "均衡飲食"].map(value => <ToggleChip key={value} value={value} selected={profile.goal === value} onClick={() => update("goal", value)} />)}</div></div>
+      <div className="field-block"><span className="field-title">當前目標</span><div className="chip-row wrap">{["減脂", "維持", "增肌", "均衡飲食"].map(value => <ToggleChip key={value} value={value} selected={profile.goal === value} onClick={() => update("goal", value)} />)}</div></div>
     </div>,
     <div className="step-body" key="taste">
       <p className="why-copy">硬性限制會直接排除；口味、預算與外食情境只影響推薦排序，不會限制你的選擇。</p>
-      <div className="field-block"><span className="field-title">運動量</span><div className="chip-row wrap">{["幾乎不運動", "每週 1 天", "每週 2–3 天", "每週 4 天以上"].map(value => <ToggleChip key={value} value={value} selected={profile.activity === value} onClick={() => update("activity", value)} />)}</div></div>
-      <div className="field-block"><span className="field-title">過敏／宗教／醫療限制（硬性排除）</span><div className="chip-row wrap">{["不吃牛", "無乳製品", "堅果過敏", "素食"].map(value => <ToggleChip key={value} value={value} selected={profile.exclusions.includes(value)} onClick={() => toggle("exclusions", value)} />)}</div></div>
+      <div className="field-block"><span className="field-title">運動量</span><div className="chip-row wrap">{["幾乎不運動", "每週 1 天", "每週 2–3 天", "每週 4 天以上"].map(value => <ToggleChip key={value} value={value} selected={profile.activity === value} onClick={() => update("activity", profile.activity === value ? "" : value)} />)}</div></div>
+      <div className="field-block"><span className="field-title">過敏／宗教／醫療限制</span><div className="chip-row wrap">{["不吃牛", "無乳製品", "堅果過敏", "素食"].map(value => <ToggleChip key={value} value={value} selected={profile.exclusions.includes(value)} onClick={() => toggle("exclusions", value)} />)}</div></div>
       <div className="field-block"><span className="field-title">口味與排序偏好</span><div className="chip-row wrap">{["少辣", "低糖", "預算 150 內"].map(value => <ToggleChip key={value} value={value} selected={profile.preferences.includes(value)} onClick={() => toggle("preferences", value)} />)}</div></div>
       <div className="field-block"><span className="field-title">日常外食情境</span><div className="chip-row wrap">{["便利商店", "便當", "餐廳", "自煮"].map(value => <ToggleChip key={value} value={value} selected={profile.contexts.includes(value)} onClick={() => toggle("contexts", value)} />)}</div></div>
       <label className="select-field">外食頻率<select value={profile.frequency} onChange={event => update("frequency", event.target.value)}><option>幾乎不外食</option><option>每週外食 1–3 次</option><option>每週外食 4–6 次</option><option>幾乎每天外食</option></select></label>
     </div>,
     <div className="step-body" key="reminder">
-      <p className="why-copy">提醒會配合你想記錄的餐次；該餐已記錄時會自動取消，不會用責備語氣催促。</p>
+      <p className="why-copy">提醒會配合你想記錄的餐次；該餐已記錄時會自動取消。</p>
       <div className="field-block"><span className="field-title">想記錄的餐次</span><div className="chip-row wrap">{["早餐", "午餐", "晚餐", "點心"].map(value => <ToggleChip key={value} value={value} selected={profile.meals.includes(value)} onClick={() => toggle("meals", value)} />)}</div></div>
       <label className="select-field">提醒時間<select value={profile.reminder} onChange={event => update("reminder", event.target.value)}><option>用餐前 20 分鐘</option><option>用餐時間</option><option>用餐後 30 分鐘</option><option>不要提醒</option></select></label>
-      <div className="soft-preview"><span>提醒預覽</span><strong>要記錄午餐嗎？</strong><small>如果已記錄，這次提醒就不會出現。</small></div>
     </div>,
   ];
-  const titles = ["先讓建議符合你的身體", "把現實生活放進推薦裡", "決定什麼時候提醒你"];
-  const invalid = step === 0 && (!profile.name.trim() || !profile.age || !profile.height || !profile.weight);
-  return <main className="onboarding-screen screen-enter"><header className="onboarding-header"><button onClick={step === 0 ? back : () => setStep(step - 1)} aria-label="上一步">←</button><span>步驟 {step + 1} / 3</span><Brand /></header><div className="step-track"><i style={{ width: `${((step + 1) / 3) * 100}%` }} /></div><section className="onboarding-content"><span className="eyebrow">SETUP / 0{step + 1}</span><h1>{titles[step]}</h1>{steps[step]}</section><div className="sticky-action"><button disabled={invalid} className="primary-btn" onClick={step === 2 ? finish : () => setStep(step + 1)}>{step === 2 ? "完成，看看今天" : "下一步"}<span>→</span></button></div></main>;
+  const titles = ["我的身體", "理想生活表", "提醒超人"];
+  const invalid = step === 0
+    ? (!profile.name.trim() || !profile.age || !profile.height || !profile.weight)
+    : step === 1
+      ? (!profile.activity || profile.contexts.length === 0)
+      : false;
+  return <main className="onboarding-screen screen-enter"><header className="onboarding-header"><button onClick={step === 0 ? back : () => setStep(step - 1)} aria-label="上一步">←</button><span>步驟 {step + 1} / 3</span><Brand /></header><div className="step-track"><i style={{ width: `${((step + 1) / 3) * 100}%` }} /></div><section className={`onboarding-content ${step === 0 ? "body-onboarding-content" : step === 1 ? "preferences-onboarding-content" : "reminder-onboarding-content"}`}>{step === 0 && <label className={`setup-avatar-placeholder ${profile.avatar ? "is-draggable" : ""}`} aria-label="選擇或拖曳調整大頭貼" onPointerDown={startAvatarDrag} onPointerMove={moveAvatar} onPointerUp={finishAvatarDrag} onPointerCancel={finishAvatarDrag} onClick={event => { if (avatarDrag.current.moved) { event.preventDefault(); avatarDrag.current.moved = false; } }}><span className="setup-avatar-clip">{profile.avatar ? <img ref={avatarImage} src={profile.avatar} alt="大頭貼預覽" draggable={false} style={{ transform: avatarTransform(profile.avatarX, profile.avatarY) }} /> : <ProfileIcon />}</span><input type="file" accept="image/*" onChange={chooseAvatar} /></label>}<span className="eyebrow">SETUP / 0{step + 1}</span><h1>{titles[step]}</h1>{steps[step]}</section><div className="sticky-action"><button disabled={invalid} className="primary-btn" onClick={step === 2 ? finish : () => setStep(step + 1)}>{step === 2 ? "開啟美好生活，Let's go" : "下一步"}<span>→</span></button></div></main>;
 }
 
 function RingMetric({ label, current, target, unit }: { label: string; current: number; target: number; unit: string }) {
@@ -254,7 +294,7 @@ function Dashboard({ meals, recordDays, profile, go, editMeal }: { meals: Meal[]
   return <main className="app-screen home-screen screen-enter">
     <header className="home-reference-header">
       <div><strong>{greeting}，{displayName}</strong><span>{weekday} · {monthDay}</span></div>
-      <button className="home-avatar" onClick={() => go("profile")} aria-label="開啟個人資料">{profile.avatar ? <img src={profile.avatar} alt="" /> : <ProfileIcon />}</button>
+      <button className="home-avatar" onClick={() => go("profile")} aria-label="開啟個人資料"><span className="home-avatar-clip">{profile.avatar ? <img src={profile.avatar} alt="" style={{ transform: avatarTransform(profile.avatarX, profile.avatarY) }} /> : <ProfileIcon />}</span></button>
     </header>
     <section className="priority-overview">
       <div className="hero reference-hero"><span className="eyebrow">熱 量 尚 缺</span><div className="calorie-number"><CalorieRollingNumber value={remaining} /><small>卡</small></div></div>
@@ -384,6 +424,8 @@ function EditMeal({ meal, update, remove, go }: { meal: Meal; update: (meal: Mea
 function ProfileSettings({ profile, save, go }: { profile: Profile; save: (profile: Profile) => void; go: (screen: Screen) => void }) {
   const [draft, setDraft] = useState(() => profile.name === "7000" ? { ...profile, name: "" } : profile);
   const [pendingScreen, setPendingScreen] = useState<Screen | null>(null);
+  const avatarDrag = useRef({ pointerId: null as number | null, pointerX: 0, pointerY: 0, avatarX: 50, avatarY: 50, moved: false });
+  const avatarImage = useRef<HTMLImageElement>(null);
   const update = <K extends keyof Profile>(key: K, value: Profile[K]) => setDraft(current => ({ ...current, [key]: value }));
   const toggle = (key: "preferences" | "exclusions" | "contexts", value: string) => update(key, draft[key].includes(value) ? draft[key].filter(item => item !== value) : [...draft[key], value]);
   const invalid = !draft.name.trim() || !draft.age.trim() || !draft.height.trim() || !draft.weight.trim();
@@ -394,24 +436,85 @@ function ProfileSettings({ profile, save, go }: { profile: Profile; save: (profi
   const chooseAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    try { update("avatar", await avatarDataUrl(file)); } catch { /* keep the current avatar */ }
+    try {
+      const avatar = await avatarDataUrl(file);
+      setDraft(current => ({ ...current, avatar, avatarX: 50, avatarY: 50 }));
+    } catch { /* keep the current avatar */ }
     event.target.value = "";
+  };
+  const startAvatarDrag = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!draft.avatar) return;
+    avatarDrag.current = { pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, avatarX: draft.avatarX, avatarY: draft.avatarY, moved: false };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* pointer id tracking keeps drag active */ }
+    event.preventDefault();
+  };
+  const moveAvatar = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!draft.avatar || avatarDrag.current.pointerId !== event.pointerId) return;
+    const dx = event.clientX - avatarDrag.current.pointerX;
+    const dy = event.clientY - avatarDrag.current.pointerY;
+    if (Math.abs(dx) + Math.abs(dy) > 3) avatarDrag.current.moved = true;
+    const clamp = (value: number) => Math.max(17, Math.min(83, value));
+    const avatarX = clamp(avatarDrag.current.avatarX - dx);
+    const avatarY = clamp(avatarDrag.current.avatarY - dy);
+    if (avatarImage.current) avatarImage.current.style.transform = avatarTransform(avatarX, avatarY);
+    avatarDrag.current = { ...avatarDrag.current, pointerX: event.clientX, pointerY: event.clientY, avatarX, avatarY };
+    event.preventDefault();
+  };
+  const finishAvatarDrag = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!draft.avatar || avatarDrag.current.pointerId !== event.pointerId) return;
+    try { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* pointer may already be released */ }
+    if (avatarDrag.current.moved) setDraft(current => ({ ...current, avatarX: avatarDrag.current.avatarX, avatarY: avatarDrag.current.avatarY }));
+    avatarDrag.current.pointerId = null;
   };
   return <><main className="app-screen settings-screen screen-enter">
     <header className="simple-header"><button onClick={() => leave("profile")} aria-label="返回我的資料">←</button><span>資料設定</span><i /></header>
-    <section className="settings-intro"><span className="eyebrow">PROFILE SETTINGS</span><h1>調整你的飲食方向</h1><p>身體與目標、飲食偏好和外食情境都能在這一頁修改；儲存後會一起更新建議。</p></section>
-    <section className="settings-identity"><label className="avatar-upload"><span>{draft.avatar ? <img src={draft.avatar} alt="大頭貼預覽" /> : <ProfileIcon />}</span><b>選擇大頭貼</b><small>照片會裁切為正方形</small><input type="file" accept="image/*" onChange={chooseAvatar} /></label><label className="profile-name-field"><span>姓名或暱稱</span><input value={draft.name} onChange={event => update("name", event.target.value)} placeholder="輸入姓名或暱稱" maxLength={20} /></label></section>
+    <div className="settings-content-scale">
+    <section className="settings-intro"><span className="eyebrow">PROFILE SETTINGS</span><h1>調整你的飲食方向</h1><p>身體與目標、飲食偏好和外食情境都能在這一頁<br />修改；儲存後會一起更新建議。</p></section>
+    <section className="settings-identity"><label className={`avatar-upload ${draft.avatar ? "is-draggable" : ""}`} aria-label="選擇或拖曳調整大頭貼" onPointerDown={startAvatarDrag} onPointerMove={moveAvatar} onPointerUp={finishAvatarDrag} onPointerCancel={finishAvatarDrag} onClick={event => { if (avatarDrag.current.moved) { event.preventDefault(); avatarDrag.current.moved = false; } }}><span>{draft.avatar ? <img ref={avatarImage} src={draft.avatar} alt="大頭貼預覽" draggable={false} style={{ transform: avatarTransform(draft.avatarX, draft.avatarY) }} /> : <ProfileIcon />}</span><input type="file" accept="image/*" onChange={chooseAvatar} /></label><label className="profile-name-field"><span>姓名或暱稱</span><input value={draft.name} onChange={event => update("name", event.target.value)} placeholder="輸入姓名或暱稱" maxLength={20} /></label></section>
     <section className="settings-section" id="settings-body"><div className="settings-section-title"><span>01</span><div><h2>身體與目標</h2><p>用來估算每日範圍與份量方向。</p></div></div><div className="form-grid"><label>年齡<input inputMode="numeric" value={draft.age} onChange={event => update("age", event.target.value)} /><span>歲</span></label><label>身高<input inputMode="numeric" value={draft.height} onChange={event => update("height", event.target.value)} /><span>cm</span></label><label>體重<input inputMode="numeric" value={draft.weight} onChange={event => update("weight", event.target.value)} /><span>kg</span></label><label>性別<select value={draft.gender} onChange={event => update("gender", event.target.value)}><option>女性</option><option>男性</option></select></label></div><div className="field-block"><span className="field-title">目前目標</span><div className="chip-row wrap">{["減脂", "維持", "增肌", "均衡飲食"].map(value => <ToggleChip key={value} value={value} selected={draft.goal === value} onClick={() => update("goal", value)} />)}</div></div><div className="field-block"><span className="field-title">運動量</span><div className="chip-row wrap">{["幾乎不運動", "每週 1 天", "每週 2–3 天", "每週 4 天以上"].map(value => <ToggleChip key={value} value={value} selected={draft.activity === value} onClick={() => update("activity", value)} />)}</div></div><div className="nutrition-target-preview"><span>目前每日估算</span><strong>{previewTargets.calories.toLocaleString()} kcal</strong><div><b>蛋白質 {previewTargets.protein}g</b><b>碳水 {previewTargets.carbs}g</b><b>脂肪 {previewTargets.fat}g</b></div><small>會隨上方資料即時試算；儲存後同步更新首頁。此為生活管理估算，非醫療處方。</small></div></section>
     <section className="settings-section" id="settings-preferences"><div className="settings-section-title"><span>02</span><div><h2>飲食偏好</h2><p>硬性限制會排除；口味只影響排序。</p></div></div><div className="field-block"><span className="field-title">過敏／宗教／醫療限制</span><div className="chip-row wrap">{["不吃牛", "無乳製品", "堅果過敏", "素食"].map(value => <ToggleChip key={value} value={value} selected={draft.exclusions.includes(value)} onClick={() => toggle("exclusions", value)} />)}</div></div><div className="field-block"><span className="field-title">口味與排序偏好</span><div className="chip-row wrap">{["少辣", "低糖", "預算 150 內"].map(value => <ToggleChip key={value} value={value} selected={draft.preferences.includes(value)} onClick={() => toggle("preferences", value)} />)}</div></div></section>
     <section className="settings-section" id="settings-contexts"><div className="settings-section-title"><span>03</span><div><h2>外食情境</h2><p>讓下一餐推薦更貼近日常選擇。</p></div></div><div className="field-block"><span className="field-title">常見用餐方式</span><div className="chip-row wrap">{["便利商店", "便當", "餐廳", "自煮"].map(value => <ToggleChip key={value} value={value} selected={draft.contexts.includes(value)} onClick={() => toggle("contexts", value)} />)}</div></div><label className="select-field">外食頻率<select value={draft.frequency} onChange={event => update("frequency", event.target.value)}><option>幾乎不外食</option><option>每週外食 1–3 次</option><option>每週外食 4–6 次</option><option>幾乎每天外食</option></select></label></section>
     <div className="settings-actions"><button className="primary-btn" disabled={invalid} onClick={() => saveAndGo("profile")}>儲存所有設定 <span>→</span></button><button className="secondary-btn" onClick={() => leave("profile")}>取消</button></div>
+    </div>
     {pendingScreen && <div className="modal-backdrop unsaved-backdrop"><section className="permission-modal unsaved-modal" role="dialog" aria-modal="true" aria-labelledby="unsaved-title"><span className="eyebrow">UNSAVED CHANGES</span><h2 id="unsaved-title">尚未儲存變更</h2><p>要先儲存這次修改，再前往其他頁面嗎？</p><button className="primary-btn" disabled={invalid} onClick={() => saveAndGo(pendingScreen)}>儲存後離開 <span>→</span></button><button className="secondary-btn" onClick={() => go(pendingScreen)}>不儲存，直接離開</button><button className="keep-editing-btn" onClick={() => setPendingScreen(null)}>繼續編輯</button></section></div>}
   </main><BottomNav screen="settings" go={leave} /></>;
 }
 
 function ProfileScreen({ profile, setProfile, editSetup, reset, go }: { profile: Profile; setProfile: (profile: Profile) => void; editSetup: (section: SettingsSection) => void; reset: () => void; go: (screen: Screen) => void }) {
   const targets = calculateNutritionTargets(profile);
-  return <main className="app-screen profile-screen screen-enter"><AppHeader label="ME / 02" /><section className="profile-hero"><span className="avatar">意</span><div><span className="eyebrow">目前目標</span><h1>{profile.goal}</h1><p>{profile.activity}</p></div></section><section className="daily-advice"><span>每日建議</span><strong>{targets.calories.toLocaleString()} kcal · 蛋白質 {targets.protein}g</strong><small>依目前資料估算，並非醫療處方。</small></section><section className="profile-list"><button onClick={() => editSetup("body")}><span>身體與目標</span><b>{profile.height}cm · {profile.weight}kg →</b></button><button onClick={() => editSetup("preferences")}><span>飲食偏好</span><b>{[...profile.preferences, ...profile.exclusions].join("、") || "無"} →</b></button><button onClick={() => editSetup("contexts")}><span>外食情境</span><b>{profile.contexts.join("、") || "未設定"} →</b></button><button onClick={() => setProfile({ ...profile, reminder: profile.reminder === "不要提醒" ? "用餐前 20 分鐘" : "不要提醒" })}><span>提醒設定</span><b>{profile.reminder}</b></button><button onClick={() => setProfile({ ...profile, location: profile.location === "allowed" ? "denied" : "allowed" })}><span>定位與隱私權</span><b>{profile.location === "allowed" ? "已允許" : "手動地點"}</b></button></section><button className="reset-btn" onClick={reset}>重設示範資料</button><p className="prototype-note">MindMeal MVP · 所有健康數值皆為互動示範</p><BottomNav screen="profile" go={go} /></main>;
+  const avatarDrag = useRef({ pointerId: null as number | null, pointerX: 0, pointerY: 0, avatarX: 50, avatarY: 50, moved: false });
+  const avatarImage = useRef<HTMLImageElement>(null);
+  const chooseAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try { setProfile({ ...profile, avatar: await avatarDataUrl(file), avatarX: 50, avatarY: 50 }); } catch { /* keep the current avatar */ }
+    event.target.value = "";
+  };
+  const startAvatarDrag = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!profile.avatar) return;
+    avatarDrag.current = { pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, avatarX: profile.avatarX, avatarY: profile.avatarY, moved: false };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* pointer id tracking keeps drag active */ }
+    event.preventDefault();
+  };
+  const moveAvatar = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!profile.avatar || avatarDrag.current.pointerId !== event.pointerId) return;
+    const dx = event.clientX - avatarDrag.current.pointerX;
+    const dy = event.clientY - avatarDrag.current.pointerY;
+    if (Math.abs(dx) + Math.abs(dy) > 3) avatarDrag.current.moved = true;
+    const clamp = (value: number) => Math.max(17, Math.min(83, value));
+    const avatarX = clamp(avatarDrag.current.avatarX - dx);
+    const avatarY = clamp(avatarDrag.current.avatarY - dy);
+    if (avatarImage.current) avatarImage.current.style.transform = avatarTransform(avatarX, avatarY);
+    avatarDrag.current = { ...avatarDrag.current, pointerX: event.clientX, pointerY: event.clientY, avatarX, avatarY };
+    event.preventDefault();
+  };
+  const finishAvatarDrag = (event: React.PointerEvent<HTMLLabelElement>) => {
+    if (!profile.avatar || avatarDrag.current.pointerId !== event.pointerId) return;
+    try { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* pointer may already be released */ }
+    if (avatarDrag.current.moved) setProfile({ ...profile, avatarX: avatarDrag.current.avatarX, avatarY: avatarDrag.current.avatarY });
+    avatarDrag.current.pointerId = null;
+  };
+  return <main className="app-screen profile-screen screen-enter"><AppHeader label="ME / 02" /><div className="profile-content-scale"><section className="profile-hero"><label className={`avatar profile-avatar-picker ${profile.avatar ? "is-draggable" : ""}`} aria-label="選擇或拖曳調整大頭貼" onPointerDown={startAvatarDrag} onPointerMove={moveAvatar} onPointerUp={finishAvatarDrag} onPointerCancel={finishAvatarDrag} onClick={event => { if (avatarDrag.current.moved) { event.preventDefault(); avatarDrag.current.moved = false; } }}>{profile.avatar ? <img ref={avatarImage} src={profile.avatar} alt="大頭貼預覽" draggable={false} style={{ transform: avatarTransform(profile.avatarX, profile.avatarY) }} /> : <ProfileIcon />}<input type="file" accept="image/*" onChange={chooseAvatar} /></label><div><span className="eyebrow">目前目標</span><h1>{profile.goal} の {profile.name || "使用者"}</h1><p>{profile.activity}</p></div></section><section className="daily-advice"><span>每日建議</span><strong>{targets.calories.toLocaleString()} kcal · 蛋白質 {targets.protein}g</strong><small>依目前資料估算，並非醫療處方。</small></section><section className="profile-list"><button onClick={() => editSetup("body")}><span>身體與目標</span><b>{profile.height}cm · {profile.weight}kg →</b></button><button onClick={() => editSetup("preferences")}><span>飲食偏好</span><b>{[...profile.preferences, ...profile.exclusions].join("、") || "無"} →</b></button><button onClick={() => editSetup("contexts")}><span>外食情境</span><b>{profile.contexts.join("、") || "未設定"} →</b></button><button onClick={() => setProfile({ ...profile, reminder: profile.reminder === "不要提醒" ? "用餐前 20 分鐘" : "不要提醒" })}><span>提醒設定</span><b>{profile.reminder}</b></button><button onClick={() => setProfile({ ...profile, location: profile.location === "allowed" ? "denied" : "allowed" })}><span>定位與隱私權</span><b>{profile.location === "allowed" ? "已允許" : "手動地點"}</b></button></section><button className="reset-btn" onClick={reset}>重設示範資料</button><p className="prototype-note">MindMeal MVP · 所有健康數值皆為互動示範</p></div><BottomNav screen="profile" go={go} /></main>;
 }
 
 export default function HomePage() {
@@ -442,6 +545,41 @@ export default function HomePage() {
         if (raw) {
           const data = JSON.parse(raw);
           restoredProfile = normalizeProfile(data.profile);
+          const avatarResetKey = "mindmeal-avatar-reset-20260819";
+          if (!window.localStorage.getItem(avatarResetKey)) {
+            restoredProfile = { ...restoredProfile, avatar: "", avatarX: 50, avatarY: 50 };
+            window.localStorage.setItem(avatarResetKey, "1");
+          }
+          const initialSelectionsKey = "mindmeal-first-option-defaults-20260819";
+          if (!window.localStorage.getItem(initialSelectionsKey)) {
+            restoredProfile = {
+              ...restoredProfile,
+              goal: "減脂",
+              activity: "幾乎不運動",
+              exclusions: ["不吃牛"],
+              preferences: ["少辣"],
+              contexts: ["便利商店"],
+              frequency: "幾乎不外食",
+              meals: ["早餐"],
+              reminder: "用餐前 20 分鐘",
+            };
+            window.localStorage.setItem(initialSelectionsKey, "1");
+          }
+          const optionalSelectionsKey = "mindmeal-optional-selections-empty-20260819";
+          if (!window.localStorage.getItem(optionalSelectionsKey)) {
+            restoredProfile = { ...restoredProfile, exclusions: [], preferences: [], contexts: [] };
+            window.localStorage.setItem(optionalSelectionsKey, "1");
+          }
+          const activitySelectionKey = "mindmeal-activity-unselected-20260819";
+          if (!window.localStorage.getItem(activitySelectionKey)) {
+            restoredProfile = { ...restoredProfile, activity: "" };
+            window.localStorage.setItem(activitySelectionKey, "1");
+          }
+          const stepTwoSelectionsKey = "mindmeal-step-two-unselected-20260819";
+          if (!window.localStorage.getItem(stepTwoSelectionsKey)) {
+            restoredProfile = { ...restoredProfile, activity: "", exclusions: [], preferences: [], contexts: [] };
+            window.localStorage.setItem(stepTwoSelectionsKey, "1");
+          }
           setProfile(restoredProfile);
           const restoredMeals = Array.isArray(data.meals) ? data.meals.map((item: Partial<Meal>) => normalizeMeal(item)).filter(Boolean) as Meal[] : (normalizeMeal(data.meal) ? [normalizeMeal(data.meal) as Meal] : []);
           setMeals(restoredMeals);
