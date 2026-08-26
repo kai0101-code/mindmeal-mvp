@@ -39,6 +39,13 @@ type Meal = {
   ingredients: string[];
 };
 type NutritionTargets = { calories: number; protein: number; carbs: number; fat: number; water: number };
+type MealAnalysisMeta = {
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  assumptions: string[];
+  model: string;
+};
+type MealPhotoAnalysis = { meal: Meal; meta: MealAnalysisMeta; imageUrl: string };
 
 const emptyProfile: Profile = {
   name: "",
@@ -129,6 +136,52 @@ function avatarDataUrl(file: File): Promise<string> {
     image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Invalid image")); };
     image.src = url;
   });
+}
+
+function mealPhotoDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) { reject(new Error("請選擇 JPG、PNG、WebP 或 HEIC 餐點照片。")); return; }
+    if (file.size > 12 * 1024 * 1024) { reject(new Error("照片超過 12MB，請改用較小的圖片。")); return; }
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const maxSize = 1600;
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) { URL.revokeObjectURL(url); reject(new Error("這台裝置無法處理照片。")); return; }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", .84));
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("無法讀取這張照片，請換一張再試。")); };
+    image.src = url;
+  });
+}
+
+async function analyzeMealPhoto(imageUrl: string): Promise<MealPhotoAnalysis> {
+  const configuredUrl = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_MINDMEAL_ANALYSIS_API_URL;
+  const response = await fetch(configuredUrl || "/api/analyze-meal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: imageUrl }),
+  });
+  const payload = await response.json().catch(() => null) as ({ meal?: Partial<Meal>; meta?: Partial<MealAnalysisMeta>; error?: string } | null);
+  if (!response.ok || !payload?.meal) throw new Error(payload?.error || "AI 分析服務暫時無法使用，請稍後再試或改用手動輸入。");
+  const meal = normalizeMeal(payload.meal);
+  if (!meal) throw new Error("AI 沒有回傳可用的營養資料，請重新拍攝。 ");
+  return {
+    meal: { ...meal, id: Date.now() },
+    imageUrl,
+    meta: {
+      confidence: payload.meta?.confidence === "high" || payload.meta?.confidence === "low" ? payload.meta.confidence : "medium",
+      summary: payload.meta?.summary || "已依照片中的可見食材與份量完成估算。",
+      assumptions: Array.isArray(payload.meta?.assumptions) ? payload.meta.assumptions.filter(Boolean) : [],
+      model: payload.meta?.model || "Gemini Flash",
+    },
+  };
 }
 
 function avatarTransform(x: number, y: number) {
@@ -316,17 +369,32 @@ function Dashboard({ meals, recordDays, profile, go, editMeal }: { meals: Meal[]
   </main>;
 }
 
-function Scan({ go, chooseMeal, albumPermission, allowAlbum }: { go: (screen: Screen) => void; chooseMeal: (meal: Meal) => void; albumPermission: AlbumPermission; allowAlbum: () => void }) {
+function Scan({ go, analyze, albumPermission, allowAlbum }: { go: (screen: Screen) => void; analyze: (imageUrl: string) => Promise<void>; albumPermission: AlbumPermission; allowAlbum: () => void }) {
   const [scanning, setScanning] = useState(false);
   const [showAlbumPermission, setShowAlbumPermission] = useState(false);
-  const begin = () => {
-    chooseMeal(demoMeal);
+  const [preview, setPreview] = useState("");
+  const [error, setError] = useState("");
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const albumInput = useRef<HTMLInputElement>(null);
+  const begin = () => cameraInput.current?.click();
+  const handlePhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
     setScanning(true);
-    window.setTimeout(() => go("analysis"), 1200);
+    setError("");
+    try {
+      const imageUrl = await mealPhotoDataUrl(file);
+      setPreview(imageUrl);
+      await analyze(imageUrl);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "照片分析失敗，請重新拍攝。");
+      setScanning(false);
+    }
   };
-  const openAlbum = () => albumPermission === "allowed" ? go("album") : setShowAlbumPermission(true);
-  const approveAlbum = () => { allowAlbum(); setShowAlbumPermission(false); go("album"); };
-  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>DEMO</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在整理這一餐" : "讓食物進入框內"}</h1><p>{scanning ? "辨識主要食材與份量，請稍候。" : "原型會使用示範餐點，不會上傳照片。"}</p></section><div className={`camera-frame ${scanning ? "scanning" : ""}`} aria-label="餐點拍攝取景框"><span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "+"}</b></div><button className={`shutter-btn ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="拍照並分析餐點"><span /></button><div className="capture-options"><button onClick={openAlbum}>相簿</button><button onClick={() => go("food-search")}>搜尋食物</button><button onClick={() => go("manual-entry")}>手動輸入</button></div>{showAlbumPermission && <div className="modal-backdrop album-permission-backdrop"><section className="permission-modal album-permission-modal" role="dialog" aria-modal="true" aria-labelledby="album-permission-title"><span className="permission-icon">▦</span><span className="eyebrow">PHOTO ACCESS</span><h2 id="album-permission-title">允許存取相簿？</h2><p>MindMeal 只會讀取你選擇的餐點照片，用於這次的營養分析示範。</p><button className="primary-btn" onClick={approveAlbum}>允許並開啟相簿 <span>→</span></button><button className="secondary-btn" onClick={() => setShowAlbumPermission(false)}>暫不允許</button></section></div>}<BottomNav screen="scan" go={go} /></main>;
+  const openAlbum = () => albumPermission === "allowed" ? albumInput.current?.click() : setShowAlbumPermission(true);
+  const approveAlbum = () => { allowAlbum(); setShowAlbumPermission(false); window.setTimeout(() => albumInput.current?.click(), 0); };
+  return <main className="app-screen dark-screen scan-screen screen-enter"><header className="dark-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><Brand /><span>GEMINI AI</span></header><section className="scan-copy"><span className="eyebrow">AI MEAL SCAN</span><h1>{scanning ? "正在分析這一餐" : "拍下完整餐點"}</h1><p>{scanning ? "Gemini 正在辨識食材、份量與營養素，通常約需數秒。" : "光線充足、餐點完整入鏡，估算會更可靠。"}</p></section><button type="button" className={`camera-frame ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="開啟手機相機拍攝餐點">{preview && <img src={preview} alt="待分析餐點預覽" />}<span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" /><b>{scanning ? "ANALYZING..." : "開啟相機"}</b></button><input ref={cameraInput} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={handlePhoto} /><input ref={albumInput} className="visually-hidden" type="file" accept="image/*" onChange={handlePhoto} /><button className={`shutter-btn ${scanning ? "scanning" : ""}`} onClick={begin} disabled={scanning} aria-label="開啟手機相機拍照並分析餐點"><span /></button>{error && <div className="scan-error" role="alert"><strong>這次沒有分析成功</strong><p>{error}</p><button onClick={begin}>重新拍攝</button></div>}<div className="capture-options"><button onClick={openAlbum} disabled={scanning}>從相簿選擇</button><button onClick={() => go("food-search")} disabled={scanning}>搜尋食物</button><button onClick={() => go("manual-entry")} disabled={scanning}>手動輸入</button></div><p className="scan-privacy">照片會傳送至 Gemini 進行本次營養估算；不會儲存在 MindMeal 伺服器。</p>{showAlbumPermission && <div className="modal-backdrop album-permission-backdrop"><section className="permission-modal album-permission-modal" role="dialog" aria-modal="true" aria-labelledby="album-permission-title"><span className="permission-icon">▦</span><span className="eyebrow">PHOTO ACCESS</span><h2 id="album-permission-title">選擇一張餐點照片？</h2><p>MindMeal 只會讀取你主動選擇的照片，並將壓縮版本傳送至 Gemini 完成本次營養分析。</p><button className="primary-btn" onClick={approveAlbum}>選擇照片並分析 <span>→</span></button><button className="secondary-btn" onClick={() => setShowAlbumPermission(false)}>暫不選擇</button></section></div>}<BottomNav screen="scan" go={go} /></main>;
 }
 
 function AlbumGallery({ choose, go }: { choose: (meal: Meal) => void; go: (screen: Screen) => void }) {
@@ -354,11 +422,11 @@ function Option({ title, hint, values, value, setValue }: { title: string; hint?
   return <div className="option-block"><div className="option-heading"><strong>{title}</strong>{hint ? <small>{hint}</small> : null}</div><div>{values.map(item => <button key={item} className={value === item ? "selected" : ""} onClick={() => setValue(item)} aria-pressed={value === item}>{item}</button>)}</div></div>;
 }
 
-function Analysis({ initialMeal, save, go }: { initialMeal: Meal; save: (meal: Meal) => void; go: (screen: Screen) => void }) {
+function Analysis({ initialMeal, imageUrl, meta, save, go }: { initialMeal: Meal; imageUrl?: string; meta?: MealAnalysisMeta; save: (meal: Meal) => void; go: (screen: Screen) => void }) {
   const [advanced, setAdvanced] = useState(false);
-  const [rice, setRice] = useState("一碗");
-  const [sauce, setSauce] = useState("正常");
-  const [completion, setCompletion] = useState("吃完");
+  const [rice, setRice] = useState(initialMeal.rice);
+  const [sauce, setSauce] = useState(initialMeal.sauce);
+  const [completion, setCompletion] = useState(initialMeal.completion);
   const [ingredients, setIngredients] = useState(initialMeal.ingredients.join("、"));
   const [customCalories, setCustomCalories] = useState("");
   const meal = useMemo(() => {
@@ -378,7 +446,8 @@ function Analysis({ initialMeal, save, go }: { initialMeal: Meal; save: (meal: M
       ingredients: ingredients.split("、").map(item => item.trim()).filter(Boolean),
     };
   }, [initialMeal, rice, sauce, completion, ingredients, customCalories]);
-  return <main className="app-screen analysis-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回掃描">←</button><span>AI 分析結果</span><i>示範估算</i></header><section className="food-visual"><div className="plate"><span className="food rice" /><span className="food chicken" /><span className="food greens g1" /><span className="food greens g2" /></div><span className="detected">辨識信心高 · 可直接儲存</span></section><section className="analysis-content"><span className="eyebrow">CHICKEN RICE BOWL</span><h1>{meal.name}</h1><p className="estimate-note">以下為 AI 估算值，會因食材與烹調方式不同；信心低時才會請你確認。</p><div className="macro-summary" aria-live="polite"><span><b>{meal.calories}</b> kcal</span><span><b>{meal.protein}g</b> 蛋白質</span><span><b>{meal.carbs}g</b> 碳水</span><span><b>{meal.fat}g</b> 脂肪</span></div><div className="detected-foods">{meal.ingredients.map(item => <span key={item}>{item}</span>)}</div><button className="primary-btn" onClick={() => save(meal)}>一鍵儲存這餐 <span>→</span></button><p className="analysis-adjustment-hint">辨識不完全正確？可修改份量、醬料、食材與熱量，數值會立即重算。</p><button className="advanced-toggle" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{advanced ? "收起調整項目" : "調整分析結果（份量、醬料、食材）"}<span>{advanced ? "−" : "＋"}</span></button>{advanced && <div className="advanced-panel"><Option title="白飯份量" hint="1 碗約 200g" values={["半碗", "一碗", "加飯"]} value={rice} setValue={setRice} /><Option title="醬料份量" hint="約影響 ±25–55 kcal" values={["少", "正常", "多"]} value={sauce} setValue={setSauce} /><Option title="實際食用量" hint="剩一些以約 80% 估算" values={["吃完", "剩一些"]} value={completion} setValue={setCompletion} /><label>辨識食材（以頓號分隔）<input value={ingredients} onChange={event => setIngredients(event.target.value)} /></label><label>自行輸入熱量（kcal）<input inputMode="numeric" placeholder={String(meal.calories)} value={customCalories} onChange={event => setCustomCalories(event.target.value)} /></label></div>}</section></main>;
+  const confidenceLabel = meta?.confidence === "high" ? "辨識信心高" : meta?.confidence === "low" ? "辨識信心較低，建議確認" : "辨識信心中等，建議快速確認";
+  return <main className="app-screen analysis-screen screen-enter"><header className="simple-header"><button onClick={() => go("scan")} aria-label="返回掃描">←</button><span>AI 分析結果</span><i>{meta ? meta.model : "資料庫估算"}</i></header><section className={`food-visual ${imageUrl ? "has-meal-photo" : ""}`}>{imageUrl ? <img src={imageUrl} alt="本次分析的餐點照片" /> : <div className="plate"><span className="food rice" /><span className="food chicken" /><span className="food greens g1" /><span className="food greens g2" /></div>}<span className="detected">{confidenceLabel}</span></section><section className="analysis-content"><span className="eyebrow">MULTIMODAL NUTRITION ESTIMATE</span><h1>{meal.name}</h1><p className="estimate-note">{meta?.summary || "以下為餐點資料庫估算值。照片無法確認隱藏食材、實際重量與用油量，儲存前請快速檢查。"}</p><div className="macro-summary" aria-live="polite"><span><b>{meal.calories}</b> kcal</span><span><b>{meal.protein}g</b> 蛋白質</span><span><b>{meal.carbs}g</b> 碳水</span><span><b>{meal.fat}g</b> 脂肪</span></div><div className="detected-foods">{meal.ingredients.map(item => <span key={item}>{item}</span>)}</div>{meta?.assumptions.length ? <div className="analysis-assumptions"><strong>估算依據</strong><ul>{meta.assumptions.map(item => <li key={item}>{item}</li>)}</ul></div> : null}<button className="primary-btn" onClick={() => save(meal)}>儲存並更新今日營養 <span>→</span></button><p className="analysis-adjustment-hint">辨識不完全正確？可修改份量、醬料、食材與熱量，數值會立即重算。</p><button className="advanced-toggle" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{advanced ? "收起調整項目" : "調整分析結果（份量、醬料、食材）"}<span>{advanced ? "−" : "＋"}</span></button>{advanced && <div className="advanced-panel"><Option title="白飯份量" hint="1 碗約 200g" values={["半碗", "一碗", "加飯"]} value={rice} setValue={setRice} /><Option title="醬料份量" hint="約影響 ±25–55 kcal" values={["少", "正常", "多"]} value={sauce} setValue={setSauce} /><Option title="實際食用量" hint="剩一些以約 80% 估算" values={["吃完", "剩一些"]} value={completion} setValue={setCompletion} /><label>辨識食材（以頓號分隔）<input value={ingredients} onChange={event => setIngredients(event.target.value)} /></label><label>自行輸入熱量（kcal）<input inputMode="numeric" placeholder={String(meal.calories)} value={customCalories} onChange={event => setCustomCalories(event.target.value)} /></label></div>}<p className="medical-disclaimer">AI 營養數值為照片估算，不適用於醫療診斷、過敏原確認或精確飲食處方。</p></section></main>;
 }
 
 function Result({ meal, profile, go }: { meal: Meal; profile: Profile; go: (screen: Screen) => void }) {
@@ -543,6 +612,8 @@ export default function HomePage() {
   const [screen, setScreen] = useState<Screen>("welcome");
   const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [selectedMeal, setSelectedMeal] = useState<Meal>(demoMeal);
+  const [selectedMealImage, setSelectedMealImage] = useState("");
+  const [selectedMealMeta, setSelectedMealMeta] = useState<MealAnalysisMeta | undefined>();
   const [albumPermission, setAlbumPermission] = useState<AlbumPermission>("unknown");
   const [meals, setMeals] = useState<Meal[]>([]);
   const [recordDays, setRecordDays] = useState(1);
@@ -624,13 +695,26 @@ export default function HomePage() {
     setScreen(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const analyzePhoto = async (imageUrl: string) => {
+    const analysis = await analyzeMealPhoto(imageUrl);
+    setSelectedMeal(analysis.meal);
+    setSelectedMealImage(analysis.imageUrl);
+    setSelectedMealMeta(analysis.meta);
+    go("analysis");
+  };
+  const chooseExistingMeal = (next: Meal) => {
+    setSelectedMeal(next);
+    setSelectedMealImage("");
+    setSelectedMealMeta(undefined);
+    go("analysis");
+  };
   const openSettings = (section: SettingsSection) => {
     setScreen("settings");
     window.setTimeout(() => document.getElementById(`settings-${section}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 180);
   };
   const saveMeal = (next: Meal) => {
     setMeals(current => [...current, { ...next, id: Date.now() }]);
-    setRecordDays(Math.max(2, recordDays));
+    setRecordDays(current => Math.max(2, current));
     go("result");
   };
   const updateMeal = (next: Meal) => {
@@ -659,11 +743,11 @@ export default function HomePage() {
   let content;
   if (screen === "welcome") content = <Welcome start={() => go("onboarding")} demo={() => { setMeals([demoMeal]); setRecordDays(7); go("home"); }} />;
   else if (screen === "onboarding") content = <Onboarding profile={profile} setProfile={setProfile} finish={() => go("home")} back={() => go("welcome")} />;
-  else if (screen === "scan") content = <Scan go={go} chooseMeal={setSelectedMeal} albumPermission={albumPermission} allowAlbum={() => setAlbumPermission("allowed")} />;
-  else if (screen === "album") content = <AlbumGallery choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
-  else if (screen === "food-search") content = <FoodSearch choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
-  else if (screen === "manual-entry") content = <ManualEntry choose={next => { setSelectedMeal(next); go("analysis"); }} go={go} />;
-  else if (screen === "analysis") content = <Analysis initialMeal={selectedMeal} go={go} save={saveMeal} />;
+  else if (screen === "scan") content = <Scan go={go} analyze={analyzePhoto} albumPermission={albumPermission} allowAlbum={() => setAlbumPermission("allowed")} />;
+  else if (screen === "album") content = <AlbumGallery choose={chooseExistingMeal} go={go} />;
+  else if (screen === "food-search") content = <FoodSearch choose={chooseExistingMeal} go={go} />;
+  else if (screen === "manual-entry") content = <ManualEntry choose={chooseExistingMeal} go={go} />;
+  else if (screen === "analysis") content = <Analysis initialMeal={selectedMeal} imageUrl={selectedMealImage} meta={selectedMealMeta} go={go} save={saveMeal} />;
   else if (screen === "result" && meal) content = <Result meal={meal} profile={profile} go={go} />;
   else if (screen === "nearby") content = <Nearby profile={profile} setProfile={setProfile} go={go} />;
   else if (screen === "store") content = <StoreDetail go={go} />;

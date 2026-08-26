@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:pages
+        env:
+          VITE_MINDMEAL_ANALYSIS_API_URL: https://mindmeal-nutrition-api.mike8363874-4e3.workers.dev/api/analyze-meal
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

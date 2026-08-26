@@ -39,7 +39,7 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /消耗熱量/);
   assert.match(page, /體態趨勢／平衡分數/);
   assert.match(page, /今日紀錄餐點/);
-  assert.match(page, /一鍵儲存這餐/);
+  assert.match(page, /儲存並更新今日營養/);
   assert.match(page, /手動輸入/);
   assert.match(page, /Google Maps/);
   assert.doesNotMatch(page, /key: "trend"/);
@@ -56,7 +56,7 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /function ManualEntry/);
   assert.match(page, /確認並查看分析/);
   assert.match(page, /className=\{`shutter-btn/);
-  assert.match(page, /允許存取相簿？/);
+  assert.match(page, /選擇一張餐點照片？/);
   assert.match(page, /function AlbumGallery/);
   assert.match(page, /scrollIntoView\(\{ behavior: "smooth"/);
   assert.match(page, /editSetup\("contexts"\)/);
@@ -66,6 +66,25 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /目前每日估算/);
   assert.match(page, /previewTargets\.calories/);
   assert.doesNotMatch(page, /<option>其他<\/option>/);
+});
+
+test("camera photos are analyzed by Gemini and returned nutrition updates the app", async () => {
+  const page = await readFile(new URL("app/page.tsx", root), "utf8");
+  const worker = await readFile(new URL("worker/meal-analysis.ts", root), "utf8");
+  const workerEntry = await readFile(new URL("worker/ai-api.ts", root), "utf8");
+  const workflow = await readFile(new URL(".github/workflows/pages.yml", root), "utf8");
+  assert.match(page, /capture="environment"/);
+  assert.match(page, /accept="image\/\*"/);
+  assert.match(page, /VITE_MINDMEAL_ANALYSIS_API_URL/);
+  assert.match(page, /analyzeMealPhoto/);
+  assert.match(page, /setMeals\(current => \[\.\.\.current/);
+  assert.match(page, /儲存並更新今日營養/);
+  assert.match(workerEntry, /\/api\/analyze-meal/);
+  assert.match(worker, /gemini-3\.6-flash/);
+  assert.match(worker, /Output\.object/);
+  assert.match(worker, /GEMINI_API_KEY/);
+  assert.doesNotMatch(page, /GEMINI_API_KEY/);
+  assert.match(workflow, /VITE_MINDMEAL_ANALYSIS_API_URL: https:\/\/mindmeal-nutrition-api\..+\/api\/analyze-meal/);
 });
 
 test("survey findings are reflected in the current experience", async () => {
