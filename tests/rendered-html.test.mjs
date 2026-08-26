@@ -76,3 +76,14 @@ test("survey findings are reflected in the current experience", async () => {
   assert.match(page, /營養缺口、距離與價格/);
   assert.match(page, /目前是關鍵字搜尋，不是特定店家的直接導航/);
 });
+
+test("nearby view uses a real Google Maps embed and keeps permission controls visible", async () => {
+  const page = await readFile(new URL("app/page.tsx", root), "utf8");
+  const styles = await readFile(new URL("app/globals.css", root), "utf8");
+  assert.match(page, /navigator\.geolocation\.getCurrentPosition/);
+  assert.match(page, /maps\.google\.com\/maps\?q=/);
+  assert.match(page, /Google Maps 附近健康餐搜尋結果/);
+  assert.match(page, /地圖與店家搜尋結果由 Google Maps 即時提供/);
+  assert.match(styles, /\.modal-backdrop\{[^}]*z-index:1200/);
+  assert.match(styles, /max-height:calc\(100dvh - 36px\)/);
+});
