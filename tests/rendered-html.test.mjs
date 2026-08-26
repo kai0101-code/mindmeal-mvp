@@ -67,3 +67,12 @@ test("v2 sitemap changes preserve the first-version body visual", async () => {
   assert.match(page, /previewTargets\.calories/);
   assert.doesNotMatch(page, /<option>其他<\/option>/);
 });
+
+test("survey findings are reflected in the current experience", async () => {
+  const page = await readFile(new URL("app/page.tsx", root), "utf8");
+  assert.match(page, /NEXT MEAL NAVIGATION \/ 下一餐導航/);
+  assert.match(page, /調整分析結果（份量、醬料、食材）/);
+  assert.match(page, /1 碗約 200g/);
+  assert.match(page, /營養缺口、距離與價格/);
+  assert.match(page, /目前是關鍵字搜尋，不是特定店家的直接導航/);
+});
