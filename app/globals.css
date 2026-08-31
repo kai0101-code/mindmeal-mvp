@@ -343,4 +343,236 @@ select{-webkit-appearance:none;appearance:none;padding-right:44px!important;back
 .setup-avatar-placeholder input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .setup-avatar-placeholder.is-draggable{touch-action:none;cursor:grab}
 .setup-avatar-placeholder.is-draggable:active{cursor:grabbing}
+
+/* Unified in-app composition: keep every field's internal layout intact while
+   matching the approved settings page's 90% scale, regional breathing room,
+   and compact bottom safe area. The fixed black navigation remains outside
+   every scaled content wrapper. */
+.unified-app-content{
+  transform:scale(.9);
+  transform-origin:top center;
+  margin-bottom:-72px;
+}
+.home-content-scale{margin-bottom:-145px}
+.scan-content-scale{margin-bottom:-88px}
+.album-content-scale{margin-bottom:-68px}
+.food-search-content-scale{margin-bottom:-84px}
+.manual-entry-content-scale{margin-bottom:-92px}
+
+.album-content-scale>.album-grid{margin-top:28px}
+.food-search-content-scale>.food-search-field{margin-top:26px}
+.food-search-content-scale>.food-results-heading{margin-top:38px}
+.manual-entry-content-scale>.manual-form{margin-top:28px}
+
+/* Pages that already have semantically separate top-level regions retain
+   their DOM and field composition; only those complete regions are scaled. */
+.analysis-screen>.food-visual,
+.analysis-screen>.analysis-content,
+.nearby-screen>:not(.app-header):not(.bottom-nav):not(.modal-backdrop),
+main:has(>.store-hero)>:not(.simple-header):not(.bottom-nav),
+main:has(>.edit-card)>.edit-card{
+  transform:scale(.9);
+  transform-origin:top center;
+}
+.analysis-screen>.analysis-content{margin-top:22px}
+.nearby-screen>.nearby-hero{margin-top:12px;margin-bottom:20px}
+.nearby-screen>.recommendation-summary{margin-top:10px;margin-bottom:28px}
+.nearby-screen>.filter-row{margin-top:24px;margin-bottom:28px}
+.nearby-screen>.real-map-card{margin-top:34px}
+.nearby-screen>.real-map-note{margin-top:18px;margin-bottom:30px}
+.nearby-screen>.fallback-note{margin-top:34px}
+main:has(>.store-hero)>.recommended-dish{margin-top:20px;margin-bottom:30px}
+main:has(>.store-hero)>.maps-expectation{margin-bottom:26px}
+main:has(>.store-hero)>.primary-btn{margin-top:20px}
+main:has(>.store-hero)>.prototype-note{margin-top:24px}
+
+.home-screen,
+.scan-screen,
+.album-screen,
+.food-search-screen,
+.manual-entry-screen,
+.analysis-screen,
+.nearby-screen,
+main:has(>.store-hero),
+main:has(>.edit-card){padding-bottom:104px}
+
+/* The home content now lives in the common scale wrapper; preserve every
+   carefully approved rail, type treatment, and responsive relationship. */
+.home-content-scale>.insight-strip,
+.home-content-scale>.collapsible-card{width:350px;max-width:100%;margin-left:auto;margin-right:auto;box-sizing:border-box}
+.home-content-scale>.insight-strip p,
+.home-content-scale>.collapsible-card .card-toggle span,
+.home-content-scale>.collapsible-card .card-detail,
+.home-content-scale>.collapsible-card .meal-row span{min-width:0;overflow-wrap:anywhere}
+.home-content-scale>.insight-strip p{width:280px;max-width:100%;margin-left:auto;margin-right:auto;text-align:left}
+.home-content-scale>.insight-strip>span,
+.home-content-scale>.insight-strip button,
+.home-content-scale>.collapsible-card .card-toggle small,
+.home-content-scale>.collapsible-card .meal-row small,
+.home-content-scale>.collapsible-card .meal-row i{display:inline-block;transform:scale(1.2);transform-origin:left center}
+.home-content-scale>.collapsible-card .meal-row i{transform-origin:right center}
+.home-content-scale>.collapsible-card .meal-row small{font-size:11px}
+.home-content-scale>.insight-strip button{display:block;margin-left:auto;margin-right:0;border-bottom-color:#111;color:#111;font-size:11px;transform-origin:right center}
+
+@media(max-width:390px){
+  .home-content-scale>.insight-strip,
+  .home-content-scale>.collapsible-card{width:calc(100% - 75px)}
+}
+
+/* Home disclosure cards share one width and one reveal treatment. The trend
+   progress track must participate in normal flow so its copy is never clipped
+   by the rounded card, matching the meal-record disclosure below it. */
+.home-content-scale>.collapsible-card{
+  overflow:hidden;
+}
+.home-content-scale>.collapsible-card .card-detail{
+  width:100%;
+  padding:18px 20px 22px;
+  animation:home-card-reveal .24s ease-out both;
+}
+.home-content-scale>.collapsible-card .unlock{
+  position:relative;
+  height:auto;
+  min-height:8px;
+  background:transparent;
+  border-radius:0;
+}
+.home-content-scale>.collapsible-card .unlock::before{
+  content:"";
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  height:8px;
+  border-radius:999px;
+  background:var(--gray);
+}
+.home-content-scale>.collapsible-card .unlock>span{
+  position:relative;
+  z-index:1;
+  display:block;
+  height:8px;
+  border-radius:999px;
+}
+.home-content-scale>.collapsible-card .unlock>p{
+  position:relative;
+  margin:0;
+  padding-top:24px;
+  width:100%;
+  color:#62625e;
+  font-size:13px;
+  line-height:1.55;
+  overflow-wrap:anywhere;
+}
+@keyframes home-card-reveal{
+  from{opacity:0;transform:translateY(-6px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* Shared page-title hierarchy: the supporting copy deliberately wraps before
+   it reaches the headline measure, following the approved Profile Settings
+   composition without affecting text inside forms, cards, or controls. */
+:where(
+  .scan-copy,
+  .album-intro,
+  .food-search-intro,
+  .manual-entry-intro,
+  .analysis-content,
+  .nearby-hero,
+  .store-hero,
+  .settings-intro
+)>.eyebrow{
+  margin-bottom:18px;
+}
+:where(
+  .scan-copy,
+  .album-intro,
+  .food-search-intro,
+  .manual-entry-intro,
+  .analysis-content,
+  .nearby-hero,
+  .store-hero,
+  .settings-intro
+)>h1{
+  margin-top:0;
+  margin-bottom:20px;
+}
+:where(
+  .scan-copy,
+  .album-intro,
+  .food-search-intro,
+  .manual-entry-intro,
+  .analysis-content,
+  .nearby-hero,
+  .store-hero,
+  .settings-intro
+)>h1+p{
+  width:88%;
+  max-width:88%;
+  margin-top:0;
+  text-wrap:pretty;
+  overflow-wrap:anywhere;
+}
+.result-screen>h1+p{
+  width:88%;
+  max-width:88%;
+  text-wrap:pretty;
+  overflow-wrap:anywhere;
+}
+
+/* Analysis correction field keeps the existing internal hierarchy and adds
+   one full-width frame with normal spacing from the save action. */
+.analysis-content{display:flex;flex-direction:column}
+.analysis-content>.analysis-adjustment-card{
+  position:relative;
+  order:1;
+  width:100%;
+  margin:24px 0 0;
+  padding:0 20px 16px;
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:#fff;
+  overflow:hidden;
+}
+.analysis-content>.primary-btn{
+  order:2;
+  margin-top:24px;
+}
+.analysis-adjustment-card>.advanced-toggle{
+  min-height:40px;
+  margin:0;
+  padding:7px 42px 1px 0;
+  border-bottom:0;
+}
+.analysis-adjustment-card>.advanced-toggle>span{
+  position:absolute;
+  top:44px;
+  right:20px;
+  z-index:2;
+  transform:translateY(-50%);
+  flex:0 0 30px;
+  width:30px;
+  height:30px;
+  border-radius:50%;
+  background:var(--orange);
+  color:#fff;
+  display:grid;
+  place-items:center;
+  font-size:19px;
+  line-height:1;
+}
+.analysis-adjustment-card>.analysis-adjustment-hint{
+  margin:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:#555;
+  font-size:clamp(9px,2.7vw,11px);
+  line-height:1.45;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.analysis-adjustment-card>.advanced-panel{margin-top:12px}
+.analysis-content>.medical-disclaimer{order:4}
 .onboarding-screen .sticky-action .primary-btn{transform:scale(.9);transform-origin:center}
