@@ -8,6 +8,7 @@ type Screen = "welcome" | "onboarding" | "home" | "history" | "scan" | "album" |
 type AlbumPermission = "unknown" | "allowed";
 type SettingsSection = "body" | "preferences" | "contexts";
 type LocationPermission = "unknown" | "allowed" | "denied";
+type CameraPermission = "unknown" | "allowed" | "denied";
 type MealType = "早餐" | "午餐" | "晚餐" | "宵夜／點心";
 type ReminderMeal = "早餐" | "午餐" | "晚餐";
 type ReminderWindow = { enabled: boolean; start: string; end: string };
@@ -32,6 +33,7 @@ type Profile = {
   meals: string[];
   reminder: string;
   reminderWindows: ReminderWindows;
+  camera: CameraPermission;
   location: LocationPermission;
 };
 type Meal = {
@@ -104,6 +106,7 @@ const emptyProfile: Profile = {
   meals: ["早餐"],
   reminder: "用餐前 20 分鐘",
   reminderWindows: defaultReminderWindows,
+  camera: "unknown",
   location: "unknown",
 };
 const base = { calories: 212, protein: 0, carbs: 34, fat: 7, water: 900 };
@@ -128,8 +131,9 @@ const foodLibrary: Meal[] = [
   { id: 16, name: "無糖豆漿", calories: 180, protein: 12, carbs: 20, fat: 6, rice: "一碗", sauce: "少", completion: "吃完", ingredients: ["黃豆", "水"] },
 ];
 
-function normalizeProfile(value?: Partial<Profile> & { location?: LocationPermission | boolean }): Profile {
+function normalizeProfile(value?: Partial<Profile> & { location?: LocationPermission | boolean; camera?: CameraPermission | boolean }): Profile {
   const location = value?.location === true ? "allowed" : value?.location === false ? "unknown" : value?.location || "unknown";
+  const camera = value?.camera === true ? "allowed" : value?.camera === false ? "denied" : value?.camera || "unknown";
   const name = value?.name && value.name !== "7000" ? value.name : "";
   const reminderWindows = reminderMealTypes.reduce((result, mealType) => {
     const saved = value?.reminderWindows?.[mealType];
@@ -141,7 +145,32 @@ function normalizeProfile(value?: Partial<Profile> & { location?: LocationPermis
     return result;
   }, {} as ReminderWindows);
   const contexts = (value?.contexts || emptyProfile.contexts).map(item => item === "便當" ? "便當店" : item);
-  return { ...emptyProfile, ...value, name, location, reminderWindows, contexts };
+  return { ...emptyProfile, ...value, name, camera, location, reminderWindows, contexts };
+}
+
+async function requestCameraStream(): Promise<MediaStream> {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    throw new DOMException("Camera access requires a secure browser context.", "SecurityError");
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: "environment" } },
+    });
+  } catch (failure) {
+    const name = failure instanceof Error ? failure.name : "";
+    if (name !== "OverconstrainedError" && name !== "NotFoundError" && name !== "TypeError") throw failure;
+    return navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+  }
+}
+
+function cameraFailureCopy(failure: unknown): string {
+  const name = failure instanceof DOMException ? failure.name : "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") return "相機權限尚未開啟，請在瀏覽器的網站設定中允許相機後重試。";
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") return "找不到可使用的相機設備。";
+  if (name === "SecurityError") return "相機需要透過安全網址開啟，請使用 GitHub 發布的 HTTPS 網頁。";
+  if (name === "AbortError") return "相機啟動逾時，請重新點擊開啟，或改用系統拍照。";
+  return "相機目前被其他程式使用，或暫時無法開啟。";
 }
 
 const mealTypes: MealType[] = ["早餐", "午餐", "晚餐", "宵夜／點心"];
@@ -879,7 +908,7 @@ function HistoryScreen({ meals, go, editMeal }: { meals: Meal[]; go: (screen: Sc
   const emptyCopy = selectedDate ? "選擇其他日期，或清除日期查看全部紀錄。" : "從第一餐開始，之後就能在這裡查看時間軸。";
   return <main className="app-screen history-screen screen-enter"><header className="simple-header"><button onClick={() => go("home")} aria-label="返回首頁">←</button><span>飲食紀錄</span><i>{meals.length} 筆</i></header><div className="unified-app-content history-content-scale"><section className="history-intro"><span className="eyebrow">MEAL HISTORY</span><div className="history-date-filter"><span>搜尋日期</span><div><button type="button" className="history-date-trigger" onClick={openDatePicker} aria-haspopup="dialog"><i aria-hidden="true">▦</i><span>{selectedDateLabel}</span><b aria-hidden="true">›</b></button>{selectedDate ? <button type="button" className="history-date-clear" onClick={() => setSelectedDate("")} aria-label="清除日期篩選">清除</button> : null}</div></div></section>{groups.length ? <div className="history-groups">{groups.map(group => { const calories = group.meals.reduce((sum, item) => sum + item.calories, 0); return <section className="history-day" key={group.key}><header><span><strong>{group.label}</strong><small>{group.meals.length} 餐</small></span><b>{calories.toLocaleString()} kcal</b></header><div>{group.meals.map(item => <button className="history-meal-row" key={item.id} onClick={() => editMeal(item)}><span className="history-time">{formatMealTime(item.eatenAt)}</span><span><strong>{item.name}</strong><small>{item.mealType || suggestedMealType(validMealDate(item.eatenAt) || new Date())} · {item.calories} kcal</small></span><i>→</i></button>)}</div></section>; })}</div> : <section className="history-empty"><strong>{emptyTitle}</strong><p>{emptyCopy}</p>{selectedDate ? <button type="button" onClick={() => setSelectedDate("")}>查看全部紀錄</button> : null}</section>}<button className="primary-btn history-add" onClick={() => go("scan")}>新增或補登餐點 <span>＋</span></button></div>{datePickerOpen && typeof document !== "undefined" ? createPortal(<div className="history-calendar-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setDatePickerOpen(false); }}><section className="history-calendar-sheet" role="dialog" aria-modal="true" aria-labelledby="history-calendar-title"><span className="sheet-handle" aria-hidden="true" /><header><h2 id="history-calendar-title">搜尋紀錄日期</h2><button type="button" onClick={() => setDatePickerOpen(false)} aria-label="關閉日期選擇">×</button></header><div className="calendar-heading"><button type="button" onClick={() => setFilterMonth(new Date(filterMonth.getFullYear(), filterMonth.getMonth() - 1, 1))} aria-label="上個月">‹</button><strong>{filterMonth.getFullYear()}年 {filterMonth.getMonth() + 1}月</strong><button type="button" onClick={() => setFilterMonth(new Date(filterMonth.getFullYear(), filterMonth.getMonth() + 1, 1))} aria-label="下個月">›</button></div><div className="calendar-weekdays" aria-hidden="true">{["日", "一", "二", "三", "四", "五", "六"].map(day => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{filterDays.map(date => { const outside = date.getMonth() !== filterMonth.getMonth(); const selected = selectedDateObject ? sameLocalDate(date, selectedDateObject) : false; const unavailable = date.getTime() > new Date().setHours(23, 59, 59, 999); return <button type="button" key={date.toISOString()} className={`${outside ? "outside" : ""} ${selected ? "selected" : ""}`} disabled={unavailable} onClick={() => chooseFilterDate(date)} aria-pressed={selected}>{date.getDate()}</button>; })}</div>{selectedDate ? <button type="button" className="history-calendar-clear" onClick={() => { setSelectedDate(""); setDatePickerOpen(false); }}>清除日期，查看全部紀錄</button> : null}</section></div>, document.body) : null}<BottomNav screen="history" go={go} /></main>;
 }
-function Scan({ go, analyze, albumPermission, allowAlbum }: { go: (screen: Screen) => void; analyze: (imageUrl: string, isActive: () => boolean) => Promise<void>; albumPermission: AlbumPermission; allowAlbum: () => void }) {
+function Scan({ go, analyze, albumPermission, allowAlbum, cameraPermission, setCameraPermission }: { go: (screen: Screen) => void; analyze: (imageUrl: string, isActive: () => boolean) => Promise<void>; albumPermission: AlbumPermission; allowAlbum: () => void; cameraPermission: CameraPermission; setCameraPermission: (permission: CameraPermission) => void }) {
   const analysisSteps = ["辨識餐點與食材", "判讀整份餐點", "整理營養資訊"];
   const [scanning, setScanning] = useState(false);
   const [analysisStep, setAnalysisStep] = useState(0);
@@ -916,36 +945,34 @@ function Scan({ go, analyze, albumPermission, allowAlbum }: { go: (screen: Scree
     setError("");
     setCameraState("opening");
     const session = ++cameraSession.current;
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      setCameraState("idle");
-      setCameraError("此瀏覽器無法直接開啟即時相機，請改用系統拍照。");
-      return;
-    }
+    let openingTimeout = 0;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1440 },
-          height: { ideal: 1440 },
-        },
-      });
+      const streamRequest = requestCameraStream();
+      void streamRequest.then(stream => {
+        if (session !== cameraSession.current) stream.getTracks().forEach(track => track.stop());
+      }).catch(() => undefined);
+      const stream = await Promise.race([
+        streamRequest,
+        new Promise<MediaStream>((_, reject) => {
+          openingTimeout = window.setTimeout(() => reject(new DOMException("Camera opening timed out.", "AbortError")), 12000);
+        }),
+      ]);
+      window.clearTimeout(openingTimeout);
       if (session !== cameraSession.current) {
         stream.getTracks().forEach(track => track.stop());
         return;
       }
       streamRef.current = stream;
+      setCameraPermission("allowed");
       setCameraState("live");
     } catch (failure) {
+      window.clearTimeout(openingTimeout);
       if (session !== cameraSession.current) return;
       releaseCamera();
       setCameraState("idle");
       const name = failure instanceof DOMException ? failure.name : "";
-      setCameraError(name === "NotAllowedError"
-        ? "相機權限未開啟，可在瀏覽器網址列允許相機後重試。"
-        : name === "NotFoundError"
-          ? "找不到可使用的相機設備。"
-          : "相機目前被其他程式使用，或暫時無法開啟。");
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") setCameraPermission("denied");
+      setCameraError(cameraFailureCopy(failure));
     }
   };
 
@@ -956,7 +983,7 @@ function Scan({ go, analyze, albumPermission, allowAlbum }: { go: (screen: Scree
   }, [cameraState]);
 
   useEffect(() => {
-    void openCamera();
+    if (cameraPermission === "allowed") void openCamera();
     return () => releaseCamera();
   }, []);
 
@@ -1050,7 +1077,7 @@ function Scan({ go, analyze, albumPermission, allowAlbum }: { go: (screen: Scree
         {(cameraState === "opening" || cameraState === "live") ? <video ref={videoRef} autoPlay playsInline muted onLoadedMetadata={() => setCameraReady(true)} aria-label="相機即時畫面" /> : preview ? <img src={preview} alt="待分析餐點預覽" /> : null}
         <span className="corner c1" /><span className="corner c2" /><span className="corner c3" /><span className="corner c4" /><i className="scan-line" />
         {cameraState === "live" && !scanning ? <span className="camera-live-label">LIVE</span> : null}
-        {scanning ? <span className="scan-analysis-status" role="status" aria-live="polite"><span className="scan-analysis-orbit" aria-hidden="true"><i /></span><strong>{analysisSteps[analysisStep]}</strong><small>{takingLong ? "分析時間比平常久，請再稍候" : "通常約需數秒"}</small></span> : cameraState === "opening" ? <span className="camera-opening" role="status">正在開啟相機…</span> : cameraState !== "live" ? <button type="button" className="camera-open-overlay" onClick={() => openCamera()}>{preview ? "重新拍攝" : "開啟相機"}</button> : null}
+        {scanning ? <span className="scan-analysis-status" role="status" aria-live="polite"><span className="scan-analysis-orbit" aria-hidden="true"><i /></span><strong>{analysisSteps[analysisStep]}</strong><small>{takingLong ? "分析時間比平常久，請再稍候" : "通常約需數秒"}</small></span> : cameraState === "opening" ? <span className="camera-opening" role="status">正在開啟相機…</span> : cameraState !== "live" ? <button type="button" className="camera-open-overlay" onClick={() => openCamera()}>{preview ? "重新拍攝" : cameraPermission === "allowed" ? "開啟相機" : "允許並開啟相機"}</button> : null}
       </div>
       <input ref={cameraInput} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={handlePhoto} />
       <input ref={albumInput} className="visually-hidden" type="file" accept="image/*" onChange={handlePhoto} />
@@ -1062,7 +1089,7 @@ function Scan({ go, analyze, albumPermission, allowAlbum }: { go: (screen: Scree
       </section> : <><button className={`shutter-btn ${cameraState === "opening" ? "opening" : ""}`} onClick={begin} disabled={cameraState === "opening" || (cameraState === "live" && !cameraReady)} aria-label={cameraState === "live" ? "拍攝並分析餐點" : "開啟裝置相機"}><span /></button><div className="capture-options"><button onClick={openAlbum}>從相簿選擇</button><button onClick={() => go("food-search")}>搜尋食物</button><button onClick={() => go("manual-entry")}>手動輸入</button></div></>}
     </div>
     {showAlbumPermission && <div className="modal-backdrop album-permission-backdrop"><section className="permission-modal album-permission-modal" role="dialog" aria-modal="true" aria-labelledby="album-permission-title"><span className="permission-icon">▦</span><span className="eyebrow">PHOTO ACCESS</span><h2 id="album-permission-title">選擇一張餐點照片？</h2><p>MindMeal 只會讀取你主動選擇的照片，用於完成這次營養分析。</p><button className="primary-btn" onClick={approveAlbum}>選擇照片並分析 <span>→</span></button><button className="secondary-btn" onClick={() => setShowAlbumPermission(false)}>暫不選擇</button></section></div>}
-    <BottomNav screen="scan" go={go} blocked={scanning || cameraState === "live" || cameraState === "opening"} />
+    <BottomNav screen="scan" go={go} blocked={scanning} />
   </main>;
 }
 
@@ -1643,12 +1670,33 @@ function AccountProfileScreen({ profile, save, go, returnTo }: { profile: Profil
 function ProfileScreen({ profile, setProfile, editSetup, openReminders, reset, go }: { profile: Profile; setProfile: (profile: Profile) => void; editSetup: (section: SettingsSection) => void; openReminders: () => void; reset: () => void; go: (screen: Screen) => void }) {
   const targets = calculateNutritionTargets(profile);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [cameraRequesting, setCameraRequesting] = useState(false);
+  const [cameraPermissionMessage, setCameraPermissionMessage] = useState("");
+  const cameraAllowed = profile.camera === "allowed";
   const locationAllowed = profile.location === "allowed";
+  const toggleCamera = async () => {
+    setCameraPermissionMessage("");
+    if (cameraAllowed) {
+      setProfile({ ...profile, camera: "denied" });
+      return;
+    }
+    setCameraRequesting(true);
+    try {
+      const stream = await requestCameraStream();
+      stream.getTracks().forEach(track => track.stop());
+      setProfile({ ...profile, camera: "allowed" });
+    } catch (failure) {
+      setProfile({ ...profile, camera: "denied" });
+      setCameraPermissionMessage(cameraFailureCopy(failure));
+    } finally {
+      setCameraRequesting(false);
+    }
+  };
   const toggleLocation = () => setProfile({ ...profile, location: locationAllowed ? "denied" : "allowed" });
   return <><main className="app-screen profile-screen screen-enter" aria-hidden={confirmReset} inert={confirmReset}><AppHeader label="ME / 02" /><div className="profile-content-scale">
     <button type="button" className="profile-hero profile-account-card" onClick={() => go("account")} aria-label="查看與編輯帳號及個人資料"><span className="avatar">{profile.avatar ? <img src={profile.avatar} alt="" style={{ transform: avatarTransform(profile.avatarX, profile.avatarY, profile.avatarZoom) }} /> : <ProfileIcon />}</span><span className="profile-account-copy"><span className="eyebrow">帳號與個人資料</span><strong>{profile.goal} の {profile.name || "使用者"}</strong></span><span className="profile-account-action">查看 <b>→</b></span></button>
     <section className="daily-advice"><span>每日建議</span><strong>{targets.calories.toLocaleString()} kcal · 蛋白質 {targets.protein}g</strong><small>依目前資料估算，並非醫療處方。</small></section>
-    <section className="profile-list"><button onClick={() => editSetup("body")}><span>身體與目標</span><b>{profile.height}cm · {profile.weight}kg →</b></button><button onClick={() => editSetup("preferences")}><span>飲食偏好</span><b>{[...profile.preferences, ...profile.exclusions].join("、") || "無"} →</b></button><button onClick={() => editSetup("contexts")}><span>日常飲食環境</span><b>{profile.contexts.join("、") || "未設定"} →</b></button><button onClick={openReminders}><span>提醒設定</span><b>{reminderMealTypes.filter(mealType => profile.reminderWindows[mealType].enabled).length} 餐已開啟 →</b></button><button type="button" className="profile-location-row" role="switch" aria-checked={locationAllowed} aria-label={`定位與隱私權，目前${locationAllowed ? "已允許" : "使用手動地點"}`} onClick={toggleLocation}><span className="profile-location-copy"><span>定位與隱私權</span><small>附近店家搜尋時使用</small></span><span className={`profile-location-switch ${locationAllowed ? "is-on" : ""}`} aria-hidden="true"><i /></span></button></section>
+    <section className="profile-list"><button onClick={() => editSetup("body")}><span>身體與目標</span><b>{profile.height}cm · {profile.weight}kg →</b></button><button onClick={() => editSetup("preferences")}><span>飲食偏好</span><b>{[...profile.preferences, ...profile.exclusions].join("、") || "無"} →</b></button><button onClick={() => editSetup("contexts")}><span>日常飲食環境</span><b>{profile.contexts.join("、") || "未設定"} →</b></button><button onClick={openReminders}><span>提醒設定</span><b>{reminderMealTypes.filter(mealType => profile.reminderWindows[mealType].enabled).length} 餐已開啟 →</b></button><button type="button" className="profile-location-row" role="switch" aria-checked={cameraAllowed} aria-label={`相機權限，目前${cameraAllowed ? "已允許" : "未允許"}`} disabled={cameraRequesting} onClick={() => void toggleCamera()}><span className="profile-location-copy"><span>相機權限</span><small>{cameraPermissionMessage || (cameraRequesting ? "正在要求裝置權限…" : cameraAllowed ? "拍照記錄餐點時使用" : "點擊後要求裝置權限")}</small></span><span className={`profile-location-switch ${cameraAllowed ? "is-on" : ""}`} aria-hidden="true"><i /></span></button><button type="button" className="profile-location-row" role="switch" aria-checked={locationAllowed} aria-label={`定位與隱私權，目前${locationAllowed ? "已允許" : "使用手動地點"}`} onClick={toggleLocation}><span className="profile-location-copy"><span>定位與隱私權</span><small>附近店家搜尋時使用</small></span><span className={`profile-location-switch ${locationAllowed ? "is-on" : ""}`} aria-hidden="true"><i /></span></button></section>
     <button className="reset-btn" onClick={() => setConfirmReset(true)}>重設示範資料</button><button className="profile-logout-btn" onClick={() => go("welcome")}>登出</button><p className="prototype-note">MindMeal MVP · 所有健康數值皆為互動示範</p>
   </div><BottomNav screen="profile" go={go} blocked={confirmReset} /></main>{confirmReset && <div className="modal-backdrop unsaved-backdrop"><section className="permission-modal unsaved-modal reset-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title"><span className="eyebrow">RESET DEMO DATA</span><h2 id="reset-confirm-title">重設示範資料？</h2><p>個人設定、提醒與飲食紀錄都會清除，並回到資料填寫流程。</p><button type="button" className="delete-confirm" onClick={() => { setConfirmReset(false); reset(); }}>確認重設</button><button type="button" className="secondary-btn" onClick={() => setConfirmReset(false)}>先保留目前資料</button></section></div>}</>;
 }
@@ -1864,7 +1912,7 @@ const saveMeal = (next: Meal) => {
   }} start={email => { setProfile(current => ({ ...current, email: email.trim() })); setPendingAccountEmail(email); go("onboarding"); }} guest={() => { setProfile(current => ({ ...current, email: "" })); setPendingAccountEmail(""); go("onboarding"); }} />;
   else if (screen === "onboarding") content = <Onboarding profile={profile} setProfile={setProfile} finish={async () => { if (reminderMealTypes.some(mealType => profile.reminderWindows[mealType].enabled)) await requestReminderPermission(); if (pendingAccountEmail) window.localStorage.setItem(accountSetupKey(pendingAccountEmail), "complete"); setPendingAccountEmail(""); go("home"); }} back={() => go("welcome")} />;
   else if (screen === "history") content = <HistoryScreen meals={meals} go={go} editMeal={item => { setSelectedMeal(item); go("edit-meal"); }} />;
-  else if (screen === "scan") content = <Scan go={go} analyze={analyzePhoto} albumPermission={albumPermission} allowAlbum={() => setAlbumPermission("allowed")} />;
+  else if (screen === "scan") content = <Scan go={go} analyze={analyzePhoto} albumPermission={albumPermission} allowAlbum={() => setAlbumPermission("allowed")} cameraPermission={profile.camera} setCameraPermission={camera => setProfile(current => ({ ...current, camera }))} />;
   else if (screen === "album") content = <AlbumGallery choose={chooseExistingMeal} go={go} />;
   else if (screen === "food-search") content = <FoodSearch choose={chooseExistingMeal} go={go} />;
   else if (screen === "manual-entry") content = <ManualEntry choose={chooseExistingMeal} go={go} />;

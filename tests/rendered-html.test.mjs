@@ -81,6 +81,10 @@ test("camera photos and food search use OpenRouter without exposing the key", as
   assert.match(page, /accept="image\/\*"/);
   assert.match(page, /navigator\.mediaDevices\.getUserMedia/);
   assert.match(page, /facingMode: \{ ideal: "environment" \}/);
+  assert.match(page, /video: true/);
+  assert.match(page, /允許並開啟相機/);
+  assert.match(page, /相機權限/);
+  assert.match(page, /blocked=\{scanning\}/);
   assert.match(page, /context\.drawImage\(video/);
   assert.match(page, /streamRef\.current\?\.getTracks\(\)\.forEach\(track => track\.stop\(\)\)/);
   assert.match(page, /void openCamera\(\)/);
