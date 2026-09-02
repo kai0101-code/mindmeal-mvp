@@ -2,6 +2,8 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { handleMealAnalysis, type MealAnalysisEnv } from "./meal-analysis";
+import { handleFoodSearch } from "./food-search";
+import { handleNextMealRecommendation } from "./next-meal";
 
 interface Env extends MealAnalysisEnv {
   ASSETS: Fetcher;
@@ -32,6 +34,14 @@ const worker = {
 
     if (url.pathname === "/api/analyze-meal") {
       return handleMealAnalysis(request, env);
+    }
+
+    if (url.pathname === "/api/search-food") {
+      return handleFoodSearch(request, env);
+    }
+
+    if (url.pathname === "/api/recommend-next-meal") {
+      return handleNextMealRecommendation(request, env);
     }
 
     if (url.pathname === "/_vinext/image") {

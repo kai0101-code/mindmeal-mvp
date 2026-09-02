@@ -4,7 +4,15 @@
   "main": "worker/ai-api.ts",
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    {
+      "binding": "AI_USAGE",
+      "id": "6e30f835a49a4d2a9031b058f8906d33"
+    }
+  ],
   "vars": {
-    "ALLOWED_ORIGINS": "https://kai0101-code.github.io"
+    "ALLOWED_ORIGINS": "https://kai0101-code.github.io",
+    "OPENROUTER_PHOTO_MODEL": "google/gemini-3.6-flash",
+    "OPENROUTER_SEARCH_MODEL": "google/gemini-2.5-flash-lite"
   }
 }
